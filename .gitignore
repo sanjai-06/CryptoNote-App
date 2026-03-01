@@ -1,0 +1,36 @@
+# Git ignore for CryptoNote
+
+# Rust
+target/
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+server/dist/
+server/node_modules/
+
+# Environment
+.env
+server/.env
+
+# Tauri
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Vault / keys (NEVER commit)
+*.db
+*.key
+*.pem
+*.crt
+*.p12
