@@ -8,6 +8,7 @@
 // - HMAC-authenticated sync payload
 
 use anyhow::{anyhow, Result};
+use base64::Engine;
 use reqwest::{Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};

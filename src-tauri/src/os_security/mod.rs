@@ -160,6 +160,7 @@ fn fallback_path(service: &str, account: &str) -> std::path::PathBuf {
 }
 
 fn fallback_store(service: &str, account: &str, secret: &[u8]) -> Result<()> {
+    use base64::Engine;
     let path = fallback_path(service, account);
     // Store base64-encoded (not encrypted in fallback – real integration needed)
     // This is a placeholder; in production use the platform keychain.
