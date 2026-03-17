@@ -217,7 +217,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Compute HMAC-SHA256 over `data` using `hmac_key`.
 pub fn compute_hmac(hmac_key: &SecureKey, data: &[u8]) -> Vec<u8> {
-    let mut mac = HmacSha256::new_from_slice(&hmac_key.0)
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&hmac_key.0)
         .expect("HMAC can take key of any size");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
@@ -225,7 +225,7 @@ pub fn compute_hmac(hmac_key: &SecureKey, data: &[u8]) -> Vec<u8> {
 
 /// Verify HMAC-SHA256 in constant time.
 pub fn verify_hmac(hmac_key: &SecureKey, data: &[u8], expected: &[u8]) -> bool {
-    let mut mac = HmacSha256::new_from_slice(&hmac_key.0)
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&hmac_key.0)
         .expect("HMAC can take key of any size");
     mac.update(data);
     mac.verify_slice(expected).is_ok()
