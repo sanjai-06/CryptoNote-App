@@ -3,13 +3,13 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { User } from '../models/User';
 import { authLimiter } from '../middleware/rateLimiter';
 
 export const authRouter = Router();
 const JWT_SECRET = process.env.JWT_SECRET ?? 'change-me-in-production-use-256-bit-key';
-const JWT_EXPIRES = process.env.JWT_EXPIRES ?? '30d';
+const JWT_EXPIRES = (process.env.JWT_EXPIRES ?? '30d') as SignOptions['expiresIn'];
 
 const RegisterSchema = z.object({
     email: z.string().email(),
@@ -52,7 +52,7 @@ authRouter.post('/register', authLimiter, async (req: Request, res: Response): P
     const token = jwt.sign(
         { userId: user._id.toString(), email: user.email, device_id },
         JWT_SECRET,
-        { expiresIn: JWT_EXPIRES, algorithm: 'HS256' }
+        { expiresIn: JWT_EXPIRES, algorithm: 'HS256' } as SignOptions
     );
 
     res.status(201).json({ token, user_id: user._id.toString() });
@@ -95,7 +95,7 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response): Prom
     const token = jwt.sign(
         { userId: user._id.toString(), email: user.email, device_id },
         JWT_SECRET,
-        { expiresIn: JWT_EXPIRES, algorithm: 'HS256' }
+        { expiresIn: JWT_EXPIRES, algorithm: 'HS256' } as SignOptions
     );
 
     res.json({ token, user_id: user._id.toString() });

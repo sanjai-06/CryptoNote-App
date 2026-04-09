@@ -24,14 +24,14 @@ export default defineConfig(async () => ({
     },
   },
   build: {
-    outDir: "../dist",
+    outDir: "dist",
     emptyOutDir: true,
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   define: {
     // Disable React devtools in production
     ...(process.env.NODE_ENV === "production" && {
-      "window.__REACT_DEVTOOLS_GLOBAL_HOOK__": "({ isDisabled: true })",
+      "window.__REACT_DEVTOOLS_GLOBAL_HOOK__": JSON.stringify({ isDisabled: true }),
     }),
   },
 }));

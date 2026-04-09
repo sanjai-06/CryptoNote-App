@@ -23,7 +23,7 @@ const UserSchema = new Schema<IUser>({
 // Never expose auth_key_hash in JSON responses
 UserSchema.set('toJSON', {
     transform: (_doc, ret) => {
-        delete ret.auth_key_hash;
+        delete (ret as unknown as Record<string, unknown>).auth_key_hash;
         return ret;
     }
 });
