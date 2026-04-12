@@ -94,4 +94,4 @@ npm test
 - **Server**: Stores only encrypted blobs. Cannot read your data.
 - **OS Keychain**: Native keychain integrations are stubbed with `TODO` — implement with platform SDKs before production.
 - **TLS cert**: Set real cert paths in `server/.env` before production deployment.
-- **JWT_SECRET**: Must be replaced with a 256-bit random key.
+- **JWT_SECRET**: Must be replaced with a 256-bit random key.# DevOps Pipeline Active
