@@ -53,11 +53,10 @@ pipeline {
                     ]) {
                         echo 'Updating Kubeconfig...'
                         sh "aws eks update-kubeconfig --region ${AWS_REGION} --name cryptonote-cluster"
-                        
                         echo 'Deploying to Kubernetes...'
-                        // Using names 'server' and 'frontend' to match your actual cluster names
-                        sh "kubectl set image deployment/server server-container=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_SERVER}:${IMAGE_TAG} -n cryptonote"
-                        sh "kubectl set image deployment/frontend frontend-container=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_FRONTEND}:${IMAGE_TAG} -n cryptonote"
+                        // Updating the images using the correct container names
+                        sh "kubectl set image deployment/server server=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_SERVER}:${IMAGE_TAG} -n cryptonote"
+                        sh "kubectl set image deployment/frontend frontend=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_FRONTEND}:${IMAGE_TAG} -n cryptonote"
                     }
                 }
             }
