@@ -1,21 +1,31 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Install dependencies (includes devDeps for TypeScript compile)
 COPY package*.json ./
-
-# Install ALL dependencies including devDependencies (needed for TypeScript)
 RUN npm install
 
-# Copy all source files
+# Copy source and compile
 COPY . .
-
-# Compile TypeScript to dist/
 RUN npm run build
 
-# Expose port
+# ── Production stage ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS production
+
+WORKDIR /app
+
+# Copy only production dependencies
+COPY package*.json ./
+RUN npm install --omit=dev
+
+# Copy compiled output from builder
+COPY --from=builder /app/dist ./dist
+
+# Non-root user for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
 EXPOSE 3000
 
-# Start the server
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

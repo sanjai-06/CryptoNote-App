@@ -34,3 +34,12 @@ Thumbs.db
 *.pem
 *.crt
 *.p12
+
+# Terraform (state contains plaintext secrets + credentials)
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Kubernetes secrets (only the .template file is committed)
+k8s/secrets.yaml
