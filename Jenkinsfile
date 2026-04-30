@@ -18,9 +18,9 @@ pipeline {
 
         stage('Build Images') {
             steps {
-                sh "docker build --no-cache -t ${ECR_REPO_SERVER}:${IMAGE_TAG} ./server"
-                sh "docker build -t ${ECR_REPO_SERVER}:${IMAGE_TAG} ./server"
-                sh "docker build -t ${ECR_REPO_FRONTEND}:${IMAGE_TAG} -f src-ui/Dockerfile ."
+                sh "docker build --no-cache -t ${ECR_REPO_SERVER}:${IMAGE_TAG} ./CryptoNote-App/server"
+                sh "docker build -t ${ECR_REPO_FRONTEND}:${IMAGE_TAG} -f CryptoNote-App/src-ui/Dockerfile ./CryptoNote-App"
+    }
             }
         }
 
