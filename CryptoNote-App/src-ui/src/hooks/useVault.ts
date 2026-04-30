@@ -1,7 +1,9 @@
 // src-ui/src/hooks/useVault.ts
-// Type-safe wrappers around Tauri IPC commands
+// Unified vault API — automatically switches between:
+//   • Tauri IPC (invoke) when running inside the desktop app
+//   • Browser REST API + WebCrypto when running in a regular browser (AWS/web)
 
-import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from '../lib/env';
 import type {
     AnomalyResult,
     EntryListItem,
@@ -13,77 +15,127 @@ import type {
     VaultMeta,
 } from '../types/vault';
 
-// ─── Vault ─────────────────────────────────────────────────────────────────  //
+import * as browser from '../lib/browserVault';
+
+// Lazy-load Tauri invoke only when inside the desktop app
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<T>(cmd, args);
+}
+
+// ─── Vault ────────────────────────────────────────────────────────────────── //
 
 export const vaultExists = (path: string): Promise<boolean> =>
-    invoke('vault_exists', { path });
+    isTauri()
+        ? tauriInvoke('vault_exists', { path })
+        : browser.browserVaultExists();
 
 export const vaultCreate = (masterPassword: string): Promise<VaultMeta> =>
-    invoke('vault_create', { masterPassword });
+    isTauri()
+        ? tauriInvoke('vault_create', { masterPassword })
+        : browser.browserVaultCreate(masterPassword);
 
 export const vaultUnlock = (masterPassword: string): Promise<VaultMeta> =>
-    invoke('vault_unlock', { masterPassword });
+    isTauri()
+        ? tauriInvoke('vault_unlock', { masterPassword })
+        : browser.browserVaultUnlock(masterPassword);
 
 export const vaultLock = (): Promise<void> =>
-    invoke('vault_lock');
+    isTauri()
+        ? tauriInvoke('vault_lock')
+        : Promise.resolve(browser.browserVaultLock());
 
 export const vaultIsLocked = (): Promise<boolean> =>
-    invoke('vault_is_locked');
+    isTauri()
+        ? tauriInvoke('vault_is_locked')
+        : Promise.resolve(browser.browserVaultIsLocked());
 
 export const vaultListEntries = (): Promise<EntryListItem[]> =>
-    invoke('vault_list_entries');
+    isTauri()
+        ? tauriInvoke('vault_list_entries')
+        : Promise.resolve(browser.browserVaultListEntries());
 
 export const vaultGetEntry = (id: string): Promise<VaultEntry> =>
-    invoke('vault_get_entry', { id });
+    isTauri()
+        ? tauriInvoke('vault_get_entry', { id })
+        : Promise.resolve(browser.browserVaultGetEntry(id));
 
 export const vaultAddEntry = (entry: VaultEntry): Promise<void> =>
-    invoke('vault_add_entry', { entry });
+    isTauri()
+        ? tauriInvoke('vault_add_entry', { entry })
+        : browser.browserVaultAddEntry(entry);
 
 export const vaultUpdateEntry = (entry: VaultEntry): Promise<void> =>
-    invoke('vault_update_entry', { entry });
+    isTauri()
+        ? tauriInvoke('vault_update_entry', { entry })
+        : browser.browserVaultUpdateEntry(entry);
 
 export const vaultDeleteEntry = (id: string): Promise<void> =>
-    invoke('vault_delete_entry', { id });
+    isTauri()
+        ? tauriInvoke('vault_delete_entry', { id })
+        : browser.browserVaultDeleteEntry(id);
 
 // ─── Password generator ────────────────────────────────────────────────────── //
 
 export const generatePassword = (options: PasswordOptions): Promise<string> =>
-    invoke('generate_password', { options });
+    isTauri()
+        ? tauriInvoke('generate_password', { options })
+        : Promise.resolve(browser.browserGeneratePassword(options));
 
 // ─── AI security ──────────────────────────────────────────────────────────── //
 
 export const aiCheckPhishing = (url: string): Promise<PhishingResult> =>
-    invoke('ai_check_phishing', { url });
+    isTauri()
+        ? tauriInvoke('ai_check_phishing', { url })
+        : Promise.resolve(browser.browserCheckPhishing(url));
 
 export const aiGetAnomalyStatus = (): Promise<AnomalyResult> =>
-    invoke('ai_get_anomaly_status');
+    isTauri()
+        ? tauriInvoke('ai_get_anomaly_status')
+        : Promise.resolve({ should_alert: false, should_lock: false, message: '', risk_score: 0 } as AnomalyResult);
 
 export const aiRecordExport = (): Promise<AnomalyResult> =>
-    invoke('ai_record_export');
+    isTauri()
+        ? tauriInvoke('ai_record_export')
+        : Promise.resolve({ should_alert: false, should_lock: false, message: '', risk_score: 0 } as AnomalyResult);
 
 // ─── Sync ──────────────────────────────────────────────────────────────────── //
 
 export const syncConfigure = (config: SyncConfig): Promise<void> =>
-    invoke('sync_configure', { config });
+    isTauri()
+        ? tauriInvoke('sync_configure', { config })
+        : Promise.resolve(browser.browserConfigureSync(config));
 
 export const syncGetStatus = (): Promise<SyncStatus> =>
-    invoke('sync_get_status');
+    isTauri()
+        ? tauriInvoke('sync_get_status')
+        : Promise.resolve(browser.browserGetSyncStatus());
 
 export const syncRegister = (email: string, masterPassword: string): Promise<string> =>
-    invoke('sync_register', { email, masterPassword });
+    isTauri()
+        ? tauriInvoke('sync_register', { email, masterPassword })
+        : Promise.resolve('');
 
 // ─── Auto-lock ─────────────────────────────────────────────────────────────── //
 
 export const setAutoLockTimeout = (seconds: number): Promise<void> =>
-    invoke('set_auto_lock_timeout', { seconds });
+    isTauri()
+        ? tauriInvoke('set_auto_lock_timeout', { seconds })
+        : Promise.resolve(browser.browserSetAutoLockTimeout(seconds));
 
 export const checkAutoLock = (): Promise<boolean> =>
-    invoke('check_auto_lock');
+    isTauri()
+        ? tauriInvoke('check_auto_lock')
+        : Promise.resolve(browser.browserCheckAutoLock());
 
 export const recordActivity = (): Promise<void> =>
-    invoke('record_activity');
+    isTauri()
+        ? tauriInvoke('record_activity')
+        : Promise.resolve(browser.browserRecordActivity());
 
 // ─── OS security ──────────────────────────────────────────────────────────── //
 
 export const securityCheckDevice = (): Promise<{ is_compromised: boolean; findings: string[] }> =>
-    invoke('security_check_device');
+    isTauri()
+        ? tauriInvoke('security_check_device')
+        : Promise.resolve(browser.browserSecurityCheck());
