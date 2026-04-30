@@ -1,0 +1,61 @@
+# ── Node.js ──────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Build outputs ─────────────────────────────────────────
+dist/
+build/
+out/
+
+# ── Rust / Cargo ──────────────────────────────────────────
+CryptoNote-App/src-tauri/target/
+
+# ── Tauri ─────────────────────────────────────────────────
+CryptoNote-App/src-tauri/WixTools/
+
+# ── Environment variables ─────────────────────────────────
+.env
+.env.local
+.env.*.local
+server/.env
+CryptoNote-App/server/.env
+
+# ── Logs ─────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Database / vault files ────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# ── Terraform state ───────────────────────────────────────
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+.terraform/
+CryptoNote-App/terraform/.terraform/
+
+# ── OS generated ──────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Temporary files ───────────────────────────────────────
+*.tmp
+*.temp
+2fa-email-*.html
