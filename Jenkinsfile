@@ -18,6 +18,7 @@ pipeline {
 
         stage('Build Images') {
             steps {
+                sh "docker build --no-cache -t ${ECR_REPO_SERVER}:${IMAGE_TAG} ./server"
                 sh "docker build -t ${ECR_REPO_SERVER}:${IMAGE_TAG} ./server"
                 sh "docker build -t ${ECR_REPO_FRONTEND}:${IMAGE_TAG} -f src-ui/Dockerfile ."
             }
