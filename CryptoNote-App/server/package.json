@@ -5,7 +5,7 @@
     "description": "CryptoNote – Encrypted sync backend (zero-knowledge)",
     "scripts": {
         "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-        "build": "echo 'No build step needed for server'",
+        "build": "tsc",
         "start": "node dist/index.js",
         "test": "jest --forceExit --detectOpenHandles"
     },
