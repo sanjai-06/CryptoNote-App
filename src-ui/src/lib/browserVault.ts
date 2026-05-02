@@ -275,6 +275,7 @@ export function browserVaultListEntries(): EntryListItem[] {
         id: e.id,
         title: e.title,
         url: e.url ?? undefined,
+        tags: e.tags ?? [],
         updated_at: e.updated_at,
         version: e.version,
     }));

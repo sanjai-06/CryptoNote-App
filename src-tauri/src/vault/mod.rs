@@ -174,6 +174,13 @@ impl Vault {
         self.state.lock().unwrap().is_none()
     }
 
+    /// Retrieve the sync_key and hmac_key if the vault is unlocked
+    pub fn get_sync_keys(&self) -> Result<(SecureKey, SecureKey)> {
+        let state = self.state.lock().unwrap();
+        let state = state.as_ref().ok_or_else(|| anyhow!("Vault is locked"))?;
+        Ok((state.keys.sync_key.clone(), state.keys.hmac_key.clone()))
+    }
+
     /// Add a new vault entry. Encrypts every sensitive field individually.
     pub fn add_entry(&self, entry: &VaultEntry) -> Result<()> {
         let state = self.state.lock().unwrap();
@@ -204,7 +211,7 @@ impl Vault {
 
         let conn = self.open_db()?;
         let mut stmt = conn
-            .prepare("SELECT id, title_enc, url_enc, updated_at, version FROM vault_entries")
+            .prepare("SELECT id, title_enc, url_enc, tags_enc, updated_at, version FROM vault_entries")
             .map_err(|e| anyhow!("List query error: {}", e))?;
 
         let items = stmt
@@ -213,13 +220,14 @@ impl Vault {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
                 ))
             })
             .map_err(|e| anyhow!("Query map error: {}", e))?
             .filter_map(|r| r.ok())
-            .filter_map(|(id, title_enc, url_enc, updated_at, version)| {
+            .filter_map(|(id, title_enc, url_enc, tags_enc, updated_at, version)| {
                 let title_data: crate::crypto::EncryptedData =
                     serde_json::from_str(&title_enc).ok()?;
                 let title = decrypt_string(key, &title_data).ok()?;
@@ -228,10 +236,18 @@ impl Vault {
                         serde_json::from_str(&u).ok()?;
                     decrypt_string(key, &url_data).ok()
                 });
+                
+                let tags = if let Ok(tags_data) = serde_json::from_str::<crate::crypto::EncryptedData>(&tags_enc) {
+                    if let Ok(tags_json) = decrypt_string(key, &tags_data) {
+                        serde_json::from_str(&tags_json).unwrap_or_default()
+                    } else { vec![] }
+                } else { vec![] };
+
                 Some(EntryListItem {
                     id,
                     title,
                     url,
+                    tags,
                     updated_at,
                     version,
                 })
@@ -285,6 +301,108 @@ impl Vault {
         conn.execute("DELETE FROM vault_entries WHERE id = ?1", params![id])
             .map_err(|e| anyhow!("Delete error: {}", e))?;
         Ok(())
+    }
+
+    /// Export the entire vault (entries and meta) as a decrypted JSON string
+    pub fn export_json(&self) -> Result<String> {
+        let state = self.state.lock().unwrap();
+        let state = state.as_ref().ok_or_else(|| anyhow!("Vault is locked"))?;
+        let key = &state.keys.vault_key;
+
+        let conn = self.open_db()?;
+        
+        let meta_enc_json: String = conn
+            .query_row("SELECT value FROM vault_meta WHERE key = 'meta_enc'", [], |row| row.get(0))
+            .map_err(|_| anyhow!("Vault meta not found"))?;
+
+        let enc_data: crate::crypto::EncryptedData = serde_json::from_str(&meta_enc_json)?;
+        let meta_json = decrypt_string(key, &enc_data)?;
+        let meta: VaultMeta = serde_json::from_str(&meta_json)?;
+
+        let mut stmt = conn.prepare("SELECT id FROM vault_entries")?;
+        let ids: Vec<String> = stmt.query_map([], |row| row.get(0))?.filter_map(|r| r.ok()).collect();
+        
+        let mut entries = Vec::new();
+        for id in ids {
+            let enc = self.load_encrypted_entry(&conn, &id)?;
+            let entry = self.decrypt_entry(&enc, key)?;
+            entries.push(entry);
+        }
+
+        #[derive(Serialize)]
+        struct VaultExport {
+            entries: Vec<VaultEntry>,
+            meta: VaultMeta,
+        }
+
+        let export = VaultExport { entries, meta };
+        serde_json::to_string(&export).map_err(|e| anyhow!("Export serialization error: {}", e))
+    }
+
+    /// Import the entire vault from a decrypted JSON string
+    pub fn import_json(&self, json: &str) -> Result<()> {
+        let state = self.state.lock().unwrap();
+        let state = state.as_ref().ok_or_else(|| anyhow!("Vault is locked"))?;
+        let key = &state.keys.vault_key;
+
+        #[derive(Deserialize)]
+        struct VaultImport {
+            entries: Vec<VaultEntry>,
+            meta: VaultMeta,
+        }
+
+        let import: VaultImport = serde_json::from_str(json)
+            .map_err(|e| anyhow!("Import deserialization error: {}", e))?;
+
+        let mut conn = self.open_db()?;
+        let tx = conn.transaction()?;
+
+        // Replace metadata
+        let enc_meta = encrypt_string(key, &serde_json::to_string(&import.meta)?)?;
+        tx.execute("UPDATE vault_meta SET value=?1 WHERE key='meta_enc'", params![serde_json::to_string(&enc_meta)?])?;
+
+        // Replace all entries
+        tx.execute("DELETE FROM vault_entries", [])?;
+        for entry in import.entries {
+            let enc = self.encrypt_entry(&entry, key)?;
+            tx.execute(
+                "INSERT INTO vault_entries
+                 (id, title_enc, username_enc, password_enc, url_enc, notes_enc, totp_enc,
+                  tags_enc, created_at, updated_at, version)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    enc.id, enc.title_enc, enc.username_enc, enc.password_enc, enc.url_enc,
+                    enc.notes_enc, enc.totp_enc, enc.tags_enc, enc.created_at, enc.updated_at, enc.version
+                ],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Get the current version of the vault
+    pub fn version(&self) -> i64 {
+        let conn = match self.open_db() {
+            Ok(c) => c,
+            Err(_) => return 1,
+        };
+        let meta_enc_json: String = match conn.query_row("SELECT value FROM vault_meta WHERE key = 'meta_enc'", [], |row| row.get(0)) {
+            Ok(v) => v,
+            Err(_) => return 1,
+        };
+        
+        let state = self.state.lock().unwrap();
+        if let Some(s) = state.as_ref() {
+            if let Ok(enc_data) = serde_json::from_str::<crate::crypto::EncryptedData>(&meta_enc_json) {
+                if let Ok(meta_json) = decrypt_string(&s.keys.vault_key, &enc_data) {
+                    if let Ok(meta) = serde_json::from_str::<VaultMeta>(&meta_json) {
+                        return meta.version;
+                    }
+                }
+            }
+        }
+        1
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────
@@ -436,6 +554,7 @@ pub struct EntryListItem {
     pub id: String,
     pub title: String,
     pub url: Option<String>,
+    pub tags: Vec<String>,
     pub updated_at: i64,
     pub version: i64,
 }

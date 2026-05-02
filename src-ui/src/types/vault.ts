@@ -19,6 +19,7 @@ export interface EntryListItem {
     id: string;
     title: string;
     url?: string;
+    tags: string[];
     updated_at: number;
     version: number;
 }

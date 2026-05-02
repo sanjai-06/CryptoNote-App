@@ -61,7 +61,8 @@ export function VaultPage() {
         return entries.filter(
             (e) =>
                 e.title.toLowerCase().includes(q) ||
-                e.url?.toLowerCase().includes(q)
+                e.url?.toLowerCase().includes(q) ||
+                e.tags?.some(tag => tag.toLowerCase().includes(q))
         );
     }, [entries, searchQuery]);
 
@@ -208,9 +209,21 @@ function EntryRow({ entry, selected, onClick }: {
     return (
         <div className={`entry-item ${selected ? 'selected' : ''}`} onClick={onClick}>
             <div className='entry-favicon'>{icon}</div>
-            <div className='entry-info'>
-                <div className='entry-title'>{entry.title}</div>
-                {formatted && <div className='entry-url'>{formatted}</div>}
+            <div className='entry-info' style={{ overflow: 'hidden' }}>
+                <div className='entry-title' style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {entry.title}
+                    {entry.tags && entry.tags.slice(0, 2).map(t => (
+                        <span key={t} className='badge' style={{ background: 'rgba(255,255,255,0.06)', fontSize: '0.65rem', padding: '1px 6px', opacity: 0.8 }}>
+                            {t}
+                        </span>
+                    ))}
+                    {entry.tags && entry.tags.length > 2 && (
+                        <span className='badge' style={{ background: 'rgba(255,255,255,0.06)', fontSize: '0.65rem', padding: '1px 6px', opacity: 0.8 }}>
+                            +{entry.tags.length - 2}
+                        </span>
+                    )}
+                </div>
+                {formatted && <div className='entry-url text-muted'>{formatted}</div>}
             </div>
         </div>
     );

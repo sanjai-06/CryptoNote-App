@@ -30,7 +30,7 @@ export function UnlockPage() {
             const meta = await vaultUnlock(password);
             setMeta(meta);
             setLocked(false);
-            navigate('/vault');
+            setTimeout(() => navigate('/vault'), 0);
         } catch (err: any) {
             setFailCount((c) => c + 1);
             setError(failCount >= 4

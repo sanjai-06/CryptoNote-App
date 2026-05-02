@@ -52,7 +52,8 @@ export function SetupPage() {
             const meta = await vaultCreate(password);
             setMeta(meta);
             setLocked(false);
-            navigate('/vault');
+            // Wait for React state flush before navigating to avoid router hitting the unlock redirect
+            setTimeout(() => navigate('/vault'), 0);
         } catch (err: any) {
             setError(err?.toString() ?? 'Failed to create vault');
         } finally {

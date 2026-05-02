@@ -179,6 +179,44 @@ pub async fn sync_register(
     Ok(auth_resp.token)
 }
 
+#[tauri::command]
+pub async fn sync_push(
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let vault = state.vault.lock().map_err(map_err)?;
+    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(map_err)?;
+    
+    let vault_json = vault.export_json().map_err(map_err)?;
+    let local_version = vault.version();
+    drop(vault);
+
+    let engine = state.sync_engine.lock().map_err(map_err)?;
+    engine.push(vault_json, local_version, &sync_key, &hmac_key).await.map_err(map_err)?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_pull(
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let vault = state.vault.lock().map_err(map_err)?;
+    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(map_err)?;
+    drop(vault);
+    
+    let engine = state.sync_engine.lock().map_err(map_err)?;
+    let (vault_json, server_version) = engine.pull(&sync_key, &hmac_key).await.map_err(map_err)?;
+    drop(engine);
+    
+    let mut vault = state.vault.lock().map_err(map_err)?;
+    // If the server version is newer, overwrite the local vault
+    if server_version > vault.version() {
+        vault.import_json(&vault_json).map_err(map_err)?;
+    }
+    
+    Ok(())
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  OS SECURITY COMMANDS
 // ═══════════════════════════════════════════════════════════════════════════════

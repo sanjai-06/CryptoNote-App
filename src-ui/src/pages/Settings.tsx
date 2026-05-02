@@ -280,6 +280,9 @@ export function SettingsPage() {
                         )}
                     </div>
 
+                    {/* ── Data Management ────────────────────────────────── */}
+                    <DataManagementSection onFlash={flash} />
+
                     {/* ── About ───────────────────────────────────────────── */}
                     <div className='settings-section'>
                         <div className='settings-section-title'>About</div>
@@ -300,6 +303,73 @@ export function SettingsPage() {
                             <span className='text-sm text-muted font-mono'>HKDF-SHA256</span>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) {
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+
+    async function handleExport() {
+        setIsExporting(true);
+        try {
+            const { exportVaultJson } = await import('../lib/importExport');
+            await exportVaultJson();
+            onFlash('Export successful ✓');
+        } catch (e: any) {
+            onFlash(`Export failed: ${e?.message ?? 'Unknown error'}`);
+        }
+        setIsExporting(false);
+    }
+
+    async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsImporting(true);
+        try {
+            const { importVaultJson } = await import('../lib/importExport');
+            const result = await importVaultJson(file);
+            onFlash(`Imported: ${result.success} added, ${result.skipped} skipped.`);
+        } catch (err: any) {
+            onFlash(`Import failed: ${err?.message ?? 'Unknown error'}`);
+        }
+        setIsImporting(false);
+        e.target.value = ''; // reset
+    }
+
+    return (
+        <div className='settings-section'>
+            <div className='settings-section-title'>Data Management</div>
+            <div className='settings-row'>
+                <div>
+                    <div className='settings-row-label'>Export Vault</div>
+                    <div className='settings-row-desc'>Download your unencrypted vault as JSON</div>
+                </div>
+                <button className='btn btn-secondary' onClick={handleExport} disabled={isExporting}>
+                    {isExporting ? 'Exporting…' : 'Export JSON'}
+                </button>
+            </div>
+            <div className='settings-row'>
+                <div>
+                    <div className='settings-row-label'>Import Vault</div>
+                    <div className='settings-row-desc'>Merge entries from a JSON backup</div>
+                </div>
+                <div>
+                    <input
+                        type='file'
+                        accept='.json'
+                        style={{ display: 'none' }}
+                        id='import-file'
+                        onChange={handleImport}
+                        disabled={isImporting}
+                    />
+                    <label htmlFor='import-file' className='btn btn-secondary' style={{ display: 'inline-block', cursor: 'pointer', opacity: isImporting ? 0.5 : 1 }}>
+                        {isImporting ? 'Importing…' : 'Import JSON'}
+                    </label>
                 </div>
             </div>
         </div>

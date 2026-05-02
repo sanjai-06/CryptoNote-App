@@ -11,6 +11,7 @@ import {
     vaultGetEntry, vaultAddEntry, vaultUpdateEntry, vaultDeleteEntry, aiCheckPhishing
 } from '../hooks/useVault';
 import type { VaultEntry, PhishingRisk } from '../types/vault';
+import { TOTPDisplay } from '../components/TOTPDisplay';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
@@ -238,6 +239,24 @@ export function ItemDetail({ entryId, onClose, onSaved }: Props) {
                         )}
                     </div>
                     <div className='form-group'>
+                        <label className='form-label'>Authenticator Key (TOTP Secret)</label>
+                        <input
+                            className='form-input font-mono text-sm'
+                            placeholder='JBSWY3DPEHPK3PXP'
+                            value={entry.totp_secret ?? ''}
+                            onChange={(e) => set('totp_secret', e.target.value.replace(/[^A-Z2-7=]/gi, '').toUpperCase())}
+                        />
+                    </div>
+                    <div className='form-group'>
+                        <label className='form-label'>Tags (comma separated)</label>
+                        <input
+                            className='form-input text-sm'
+                            placeholder='work, finance, personal'
+                            value={entry.tags.join(', ')}
+                            onChange={(e) => set('tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+                        />
+                    </div>
+                    <div className='form-group'>
                         <label className='form-label'>Notes</label>
                         <textarea
                             className='form-input'
@@ -260,7 +279,25 @@ export function ItemDetail({ entryId, onClose, onSaved }: Props) {
                         copied={copied === 'password'}
                     />
                     {entry.url && <FieldRow label='URL' value={entry.url} onCopy={() => copyField(entry.url!, 'url')} copied={copied === 'url'} />}
+                    {entry.totp_secret && (
+                        <div className='detail-field' style={{ display: 'block', paddingBottom: 16 }}>
+                            <div className='detail-field-label'>Two-Factor Authentication (TOTP)</div>
+                            <TOTPDisplay secret={entry.totp_secret} />
+                        </div>
+                    )}
                     {entry.notes && <FieldRow label='Notes' value={entry.notes} onCopy={() => copyField(entry.notes!, 'notes')} copied={copied === 'notes'} />}
+                    {entry.tags.length > 0 && (
+                        <div className='detail-field' style={{ display: 'block' }}>
+                            <div className='detail-field-label'>Tags</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                                {entry.tags.map((tag) => (
+                                    <span key={tag} className='badge' style={{ background: 'rgba(255,255,255,0.06)' }}>
+                                        {tag}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                         <span className='badge badge-info'><Shield size={9} /> Zero-Knowledge Encrypted</span>
                     </div>

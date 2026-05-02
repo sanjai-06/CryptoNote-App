@@ -30,15 +30,25 @@ export const vaultExists = (path: string): Promise<boolean> =>
         ? tauriInvoke('vault_exists', { path })
         : browser.browserVaultExists();
 
-export const vaultCreate = (masterPassword: string): Promise<VaultMeta> =>
-    isTauri()
-        ? tauriInvoke('vault_create', { masterPassword })
-        : browser.browserVaultCreate(masterPassword);
+export const vaultCreate = async (masterPassword: string): Promise<VaultMeta> => {
+    if (isTauri()) {
+        const meta = await tauriInvoke<VaultMeta>('vault_create', { masterPassword });
+        await tauriInvoke('sync_push').catch(console.error);
+        return meta;
+    } else {
+        return browser.browserVaultCreate(masterPassword);
+    }
+};
 
-export const vaultUnlock = (masterPassword: string): Promise<VaultMeta> =>
-    isTauri()
-        ? tauriInvoke('vault_unlock', { masterPassword })
-        : browser.browserVaultUnlock(masterPassword);
+export const vaultUnlock = async (masterPassword: string): Promise<VaultMeta> => {
+    if (isTauri()) {
+        const meta = await tauriInvoke<VaultMeta>('vault_unlock', { masterPassword });
+        await tauriInvoke('sync_pull').catch(console.error);
+        return meta;
+    } else {
+        return browser.browserVaultUnlock(masterPassword);
+    }
+};
 
 export const vaultLock = (): Promise<void> =>
     isTauri()
@@ -60,20 +70,32 @@ export const vaultGetEntry = (id: string): Promise<VaultEntry> =>
         ? tauriInvoke('vault_get_entry', { id })
         : Promise.resolve(browser.browserVaultGetEntry(id));
 
-export const vaultAddEntry = (entry: VaultEntry): Promise<void> =>
-    isTauri()
-        ? tauriInvoke('vault_add_entry', { entry })
-        : browser.browserVaultAddEntry(entry);
+export const vaultAddEntry = async (entry: VaultEntry): Promise<void> => {
+    if (isTauri()) {
+        await tauriInvoke('vault_add_entry', { entry });
+        await tauriInvoke('sync_push').catch(console.error);
+    } else {
+        await browser.browserVaultAddEntry(entry);
+    }
+};
 
-export const vaultUpdateEntry = (entry: VaultEntry): Promise<void> =>
-    isTauri()
-        ? tauriInvoke('vault_update_entry', { entry })
-        : browser.browserVaultUpdateEntry(entry);
+export const vaultUpdateEntry = async (entry: VaultEntry): Promise<void> => {
+    if (isTauri()) {
+        await tauriInvoke('vault_update_entry', { entry });
+        await tauriInvoke('sync_push').catch(console.error);
+    } else {
+        await browser.browserVaultUpdateEntry(entry);
+    }
+};
 
-export const vaultDeleteEntry = (id: string): Promise<void> =>
-    isTauri()
-        ? tauriInvoke('vault_delete_entry', { id })
-        : browser.browserVaultDeleteEntry(id);
+export const vaultDeleteEntry = async (id: string): Promise<void> => {
+    if (isTauri()) {
+        await tauriInvoke('vault_delete_entry', { id });
+        await tauriInvoke('sync_push').catch(console.error);
+    } else {
+        await browser.browserVaultDeleteEntry(id);
+    }
+};
 
 // ─── Password generator ────────────────────────────────────────────────────── //
 
@@ -115,6 +137,16 @@ export const syncRegister = (email: string, masterPassword: string): Promise<str
     isTauri()
         ? tauriInvoke('sync_register', { email, masterPassword })
         : Promise.resolve('');
+
+export const syncPush = (): Promise<void> =>
+    isTauri()
+        ? tauriInvoke('sync_push')
+        : Promise.resolve(); // browser vault auto-pushes on mutation
+
+export const syncPull = (): Promise<void> =>
+    isTauri()
+        ? tauriInvoke('sync_pull')
+        : Promise.resolve(); // browser vault pulls on unlock
 
 // ─── Auto-lock ─────────────────────────────────────────────────────────────── //
 
