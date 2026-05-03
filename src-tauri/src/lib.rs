@@ -52,6 +52,8 @@ pub fn map_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+pub mod native_messaging_server;
+
 // ─── App entry point ──────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -72,6 +74,10 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
+        .setup(|app| {
+            native_messaging_server::start_server(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Vault
             vault_exists,
