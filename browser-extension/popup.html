@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>CryptoNote</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🔐 CryptoNote</div>
+    <div id="status-indicator" class="status-dot"></div>
+  </div>
+
+  <div id="locked-view" class="view hidden">
+    <p>Your vault is locked or the desktop app is not running.</p>
+    <p class="muted">Please open CryptoNote and unlock your vault to access your passwords.</p>
+    <button id="btn-refresh" class="btn">Refresh</button>
+  </div>
+
+  <div id="unlocked-view" class="view hidden">
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Search vault..." autocomplete="off" autofocus>
+    </div>
+    
+    <div class="section-title" id="list-title">Suggested Logins</div>
+    <div id="login-list" class="login-list">
+      <!-- List items will be injected here -->
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -85,19 +85,38 @@ fn process_message(msg: Value, app: &AppHandle) -> Value {
             }
             
             let url = msg["url"].as_str().unwrap_or("").to_lowercase();
+            let query = msg["query"].as_str().unwrap_or("").to_lowercase();
             let mut matches = Vec::new();
             
             if let Ok(entries) = vault.list_entries() {
                 for item in entries {
-                    if let Some(ref item_url) = item.url {
-                        if item_url.to_lowercase().contains(&url) || url.contains(&item_url.to_lowercase()) {
-                            // Fetch full entry for password
-                            if let Ok(full_entry) = vault.get_entry(&item.id) {
-                                matches.push(serde_json::json!({
-                                    "username": full_entry.username,
-                                    "password": full_entry.password,
-                                }));
+                    let mut is_match = false;
+                    
+                    if !query.is_empty() {
+                        if item.title.to_lowercase().contains(&query) {
+                            is_match = true;
+                        }
+                    } else if !url.is_empty() {
+                        if let Some(ref item_url) = item.url {
+                            if item_url.to_lowercase().contains(&url) || url.contains(&item_url.to_lowercase()) {
+                                is_match = true;
                             }
+                        }
+                    } else {
+                        // If both query and url are empty, return all
+                        is_match = true;
+                    }
+
+                    if is_match {
+                        // Fetch full entry for password
+                        if let Ok(full_entry) = vault.get_entry(&item.id) {
+                            matches.push(serde_json::json!({
+                                "id": full_entry.id,
+                                "title": full_entry.title,
+                                "username": full_entry.username,
+                                "password": full_entry.password,
+                                "url": full_entry.url,
+                            }));
                         }
                     }
                 }

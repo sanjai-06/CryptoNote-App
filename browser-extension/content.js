@@ -80,5 +80,19 @@ document.addEventListener('submit', (e) => {
   }
 });
 
+// Listen for force autofill from popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'force_autofill') {
+    const forms = getLoginForms();
+    forms.forEach(({ username, password }) => {
+      username.value = request.username;
+      password.value = request.password;
+      username.dispatchEvent(new Event('input', { bubbles: true }));
+      password.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    sendResponse({ success: true });
+  }
+});
+
 // Run on page load
 setTimeout(requestAutofill, 500);
