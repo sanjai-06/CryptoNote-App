@@ -123,19 +123,11 @@ h4 { font-size: 0.95rem; font-weight: 600; }
     radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,229,160,0.12) 0%, transparent 70%),
     radial-gradient(ellipse 60% 50% at 90% 100%, rgba(0,180,216,0.1) 0%, transparent 60%),
     var(--bg-base);
-  animation: bgPulse 8s ease-in-out infinite alternate;
-}
-
-@keyframes bgPulse {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 0% 20px; }
 }
 
 .auth-card {
   width: 420px;
   background: var(--bg-glass);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: var(--radius-xl);
   padding: 48px 40px;
@@ -144,8 +136,8 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 }
 
 @keyframes cardEntrance {
-  from { opacity: 0; transform: translateY(30px) scale(0.95); filter: blur(4px); }
-  to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  from { opacity: 0; transform: translateY(30px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ── Sidebar ─────────────────────────────────────────────── */

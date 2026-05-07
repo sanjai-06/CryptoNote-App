@@ -34,8 +34,8 @@ class RBACService {
         this.redis = null;
         this.redisInitialized = false;
         
-        this.initializeDefaultRoles();
         this.setupLogger();
+        this.initializeDefaultRoles();
         // Redis will be initialized when needed
     }
 

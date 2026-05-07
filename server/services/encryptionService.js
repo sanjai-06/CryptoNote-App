@@ -416,21 +416,21 @@ class EncryptionService {
      * Validate encrypted package structure
      * SECURITY: Prevents malformed data attacks
      */
-    validateEncryptedPackage(package) {
+    validateEncryptedPackage(pkg) {
         const required = ['version', 'algorithm', 'iv', 'tag', 'data', 'timestamp'];
         
         for (const field of required) {
-            if (!package.hasOwnProperty(field)) {
+            if (!pkg.hasOwnProperty(field)) {
                 throw new Error(`Missing required field: ${field}`);
             }
         }
 
-        if (package.algorithm !== this.algorithm) {
-            throw new Error(`Unsupported algorithm: ${package.algorithm}`);
+        if (pkg.algorithm !== this.algorithm) {
+            throw new Error(`Unsupported algorithm: ${pkg.algorithm}`);
         }
 
-        if (package.version > this.keyVersion) {
-            throw new Error(`Unsupported key version: ${package.version}`);
+        if (pkg.version > this.keyVersion) {
+            throw new Error(`Unsupported key version: ${pkg.version}`);
         }
     }
 
