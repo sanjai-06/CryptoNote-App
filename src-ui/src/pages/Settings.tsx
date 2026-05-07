@@ -182,14 +182,10 @@ export function SettingsPage() {
                                 <div className='settings-row-desc'>Vault automatically locks when idle</div>
                             </div>
                             <select
+                                className='form-select'
                                 value={autoLockTimeout}
                                 onChange={(e) => handleLockTimeout(Number(e.target.value))}
-                                style={{
-                                    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                                    borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-                                    padding: '6px 10px', fontSize: '0.875rem', cursor: 'pointer',
-                                    outline: 'none',
-                                }}
+                                style={{ width: 'auto', minWidth: '140px' }}
                             >
                                 {lockOptions.map((o) => (
                                     <option key={o.value} value={o.value}>{o.label}</option>

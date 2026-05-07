@@ -7,6 +7,8 @@
 
 /* ── Design tokens ───────────────────────────────────────── */
 :root {
+  color-scheme: dark;
+  
   /* Background layers */
   --bg-base:      #080c10;
   --bg-surface:   #0d1117;
@@ -503,6 +505,31 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 .form-input.font-mono {
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.05em;
+}
+
+.form-select {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 10px 36px 10px 14px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%238b9ab0%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  transition: all var(--transition);
+}
+
+.form-select:focus {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px rgba(0, 229, 160, 0.1);
 }
 
 /* ── Badges ──────────────────────────────────────────────── */
