@@ -92,6 +92,53 @@ app.get('/api/categories', (req, res) => {
   });
 });
 
+// ── Sync (Vault) routes ────────────────────────────────────────────────────────
+const VaultBlobSchema = new mongoose.Schema({
+  user_id: String,
+  device_id: String,
+  version: Number,
+  timestamp: Number,
+  encrypted_vault: Object,
+  hmac: String,
+  sequence: Number,
+  size_bytes: Number,
+});
+const VaultBlob = mongoose.models.VaultBlob || mongoose.model('VaultBlob', VaultBlobSchema);
+
+app.post('/api/vault/push', async (req, res) => {
+  try {
+    const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence } = req.body;
+    const sizeBytes = JSON.stringify(encrypted_vault).length;
+    
+    await VaultBlob.findOneAndUpdate(
+      { user_id }, 
+      { device_id, version, timestamp, encrypted_vault, hmac, sequence, size_bytes: sizeBytes },
+      { upsert: true, new: true }
+    );
+    
+    logger.info(`Vault pushed for user: ${user_id}, version: ${version}`);
+    res.status(200).json({ status: 'synced', server_version: version });
+  } catch (error) {
+    logger.error('Push error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/vault/pull/:user_id', async (req, res) => {
+  try {
+    const blob = await VaultBlob.findOne({ user_id: req.params.user_id });
+    if (!blob) return res.status(404).json({ status: 'not_found' });
+    
+    res.json({
+      status: 'ok',
+      server_version: blob.version,
+      payload: blob
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
