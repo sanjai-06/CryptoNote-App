@@ -6,25 +6,112 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+
+  <!-- Header -->
   <div class="header">
-    <div class="logo">🔐 CryptoNote</div>
-    <div id="status-indicator" class="status-dot"></div>
-  </div>
-
-  <div id="locked-view" class="view hidden">
-    <p>Your vault is locked or the desktop app is not running.</p>
-    <p class="muted">Please open CryptoNote and unlock your vault to access your passwords.</p>
-    <button id="btn-refresh" class="btn">Refresh</button>
-  </div>
-
-  <div id="unlocked-view" class="view hidden">
-    <div class="search-box">
-      <input type="text" id="search-input" placeholder="Search vault..." autocomplete="off" autofocus>
+    <div class="logo">
+      <img src="icons/icon16.png" width="16" height="16" alt="">
+      CryptoNote
     </div>
-    
-    <div class="section-title" id="list-title">Suggested Logins</div>
+    <div class="header-right">
+      <div id="status-badge" class="status-badge locked">
+        <div class="status-dot" id="status-indicator"></div>
+        <span id="status-text">Locked</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Locked / Disconnected View -->
+  <div id="locked-view" class="view hidden">
+    <div class="lock-icon">🔒</div>
+    <h3>Vault Locked</h3>
+    <p class="muted">Open the CryptoNote desktop app and unlock your vault to access passwords here.</p>
+    <button id="btn-refresh" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh Status
+    </button>
+  </div>
+
+  <!-- Unlocked View -->
+  <div id="unlocked-view" class="view hidden">
+
+    <!-- Save Prompt Banner -->
+    <div id="save-prompt" class="save-prompt hidden">
+      <div class="save-prompt-body">
+        <div class="save-prompt-icon">💾</div>
+        <div class="save-prompt-text">
+          <div class="save-prompt-title">Save new login?</div>
+          <div class="save-prompt-url" id="save-prompt-url"></div>
+        </div>
+      </div>
+      <div class="save-prompt-actions">
+        <button id="btn-save-confirm" class="btn btn-accent btn-sm">Save</button>
+        <button id="btn-save-dismiss" class="btn btn-ghost btn-sm">Dismiss</button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-box">
+      <div class="search-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>
+      <input type="text" id="search-input" placeholder="Search vault…" autocomplete="off" autofocus>
+      <button id="btn-clear-search" class="clear-btn hidden">✕</button>
+    </div>
+
+    <!-- List Section -->
+    <div class="section-header">
+      <span class="section-title" id="list-title">Suggested Logins</span>
+      <span class="section-count" id="list-count"></span>
+    </div>
+
     <div id="login-list" class="login-list">
-      <!-- List items will be injected here -->
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <span>Loading vault…</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="current-site" id="current-site">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span id="current-site-url">—</span>
+      </div>
+      <button id="btn-add-new" class="btn-icon" title="Add new login">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Add New Login Modal -->
+  <div id="add-modal" class="modal hidden">
+    <div class="modal-header">
+      <span>Add New Login</span>
+      <button id="btn-close-modal" class="close-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Title / Site</label>
+        <input type="text" id="new-title" placeholder="e.g. GitHub" class="form-input">
+      </div>
+      <div class="form-group">
+        <label>Username / Email</label>
+        <input type="text" id="new-username" placeholder="user@example.com" autocomplete="off" class="form-input">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="pass-row">
+          <input type="password" id="new-password" placeholder="••••••••" autocomplete="off" class="form-input">
+          <button id="btn-toggle-pass" class="toggle-pass" title="Show password">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button id="btn-save-new" class="btn btn-primary w-full">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save to Vault
+      </button>
     </div>
   </div>
 

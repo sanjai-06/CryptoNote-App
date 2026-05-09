@@ -1,98 +1,205 @@
-// CryptoNote Content Script
+// browser-extension/content.js
+// Injected into every page. Detects login forms and autofills credentials
+// from the CryptoNote desktop app via the background service worker.
 
-// Minimal CSS to indicate CryptoNote icon in inputs
-const style = document.createElement('style');
-style.textContent = `
-  .cn-autofill-icon {
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>');
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 16px;
-    cursor: pointer;
+(function () {
+  'use strict';
+
+  // Don't run in iframes
+  if (window.self !== window.top) return;
+
+  // ── Styles injected into the page ────────────────────────────────────────
+  const style = document.createElement('style');
+  style.textContent = `
+    .cn-icon-wrapper {
+      position: absolute !important;
+      right: 8px !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      width: 20px !important;
+      height: 20px !important;
+      cursor: pointer !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      opacity: 0.6 !important;
+      transition: opacity 0.15s !important;
+    }
+    .cn-icon-wrapper:hover { opacity: 1 !important; }
+    .cn-icon-wrapper svg { display: block; }
+
+    /* Subtle glow on fields that have a CryptoNote suggestion */
+    .cn-has-suggestion {
+      outline: none !important;
+    }
+    .cn-has-suggestion:focus {
+      box-shadow: 0 0 0 2px rgba(0, 229, 160, 0.35) !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // ── Lock SVG icon ─────────────────────────────────────────────────────────
+  const LOCK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00e5a0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+
+  // ── Form detection ─────────────────────────────────────────────────────────
+  function getLoginForms() {
+    const forms = [];
+    const passwordFields = document.querySelectorAll(
+      'input[type="password"]:not([data-cn-processed])'
+    );
+
+    passwordFields.forEach(pwField => {
+      const container = pwField.closest('form') || document;
+
+      // Try to find the best username/email field
+      const candidates = [
+        ...Array.from(container.querySelectorAll(
+          'input[type="email"], input[type="text"], input[type="tel"]'
+        ))
+      ].filter(el => {
+        const name = (el.name + el.id + el.placeholder).toLowerCase();
+        return name.match(/user|email|login|mail|phone|account/);
+      });
+
+      const usernameField = candidates[0] || container.querySelector(
+        'input[type="email"], input[type="text"]'
+      );
+
+      if (usernameField && pwField) {
+        forms.push({ usernameField, pwField });
+      }
+    });
+
+    return forms;
   }
-`;
-document.head.appendChild(style);
 
-function getLoginForms() {
-  const forms = [];
-  const passwordInputs = document.querySelectorAll('input[type="password"]');
-  
-  passwordInputs.forEach(pw => {
-    // Try to find the closest form, or just use the document
-    const form = pw.closest('form');
-    // Try to find an associated username/email field
-    const un = (form || document).querySelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="email"], input[name*="login"]');
-    
-    if (un && pw) {
-      forms.push({ form, username: un, password: pw });
+  // ── Inject CryptoNote icon into a field ────────────────────────────────────
+  function injectIcon(input, onClickFill) {
+    // Ensure the parent is positioned
+    const parent = input.parentElement;
+    const pos = window.getComputedStyle(parent).position;
+    if (pos === 'static') parent.style.position = 'relative';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cn-icon-wrapper';
+    wrapper.innerHTML = LOCK_SVG;
+    wrapper.title = 'Autofill with CryptoNote';
+    wrapper.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClickFill();
+    });
+
+    parent.appendChild(wrapper);
+    return wrapper;
+  }
+
+  // ── Fill a form with credentials ───────────────────────────────────────────
+  function fillForm(usernameField, pwField, username, password) {
+    usernameField.value = username;
+    pwField.value       = password;
+
+    // Trigger framework change detection (React, Vue, Angular)
+    [usernameField, pwField].forEach(el => {
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  // ── Auto-suggest on page load ──────────────────────────────────────────────
+  async function autoSuggest() {
+    const forms = getLoginForms();
+    if (forms.length === 0) return;
+
+    const response = await new Promise(resolve => {
+      chrome.runtime.sendMessage(
+        { action: 'get_logins', url: window.location.origin },
+        resolve
+      );
+    }).catch(() => null);
+
+    if (!response || response.error || !response.logins?.length) return;
+
+    const login = response.logins[0];
+
+    forms.forEach(({ usernameField, pwField }) => {
+      // Mark as processed so we don't double-process
+      pwField.setAttribute('data-cn-processed', '1');
+      usernameField.classList.add('cn-has-suggestion');
+      pwField.classList.add('cn-has-suggestion');
+
+      // Inject icon next to the username field
+      injectIcon(usernameField, () => {
+        fillForm(usernameField, pwField, login.username, login.password);
+      });
+
+      // Auto-fill when user focuses the username field (first time only)
+      usernameField.addEventListener('focus', () => {
+        if (!usernameField.value) {
+          fillForm(usernameField, pwField, login.username, login.password);
+        }
+      }, { once: true });
+    });
+  }
+
+  // ── Auto-save on form submit ───────────────────────────────────────────────
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    const pwField = form.querySelector('input[type="password"]');
+    const unField = form.querySelector(
+      'input[type="email"], input[type="text"][name*="user"], input[name*="email"], input[type="text"]'
+    );
+
+    if (pwField?.value && unField?.value) {
+      // Notify background to show save prompt in popup
+      chrome.runtime.sendMessage({
+        action:   'new_credentials_detected',
+        url:      window.location.origin,
+        username: unField.value,
+        password: pwField.value,
+      });
+    }
+  }, true); // capture phase so we catch before the form navigates
+
+  // ── Listen for force-fill from popup ──────────────────────────────────────
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'force_autofill') {
+      const forms = getLoginForms();
+      if (forms.length === 0) {
+        // Try any password field as fallback
+        const pw = document.querySelector('input[type="password"]');
+        const un = document.querySelector('input[type="email"], input[type="text"]');
+        if (un && pw) {
+          fillForm(un, pw, request.username, request.password);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No login form found' });
+        }
+        return;
+      }
+
+      forms.forEach(({ usernameField, pwField }) => {
+        fillForm(usernameField, pwField, request.username, request.password);
+      });
+      sendResponse({ success: true });
     }
   });
-  
-  return forms;
-}
 
-async function requestAutofill() {
-  const forms = getLoginForms();
-  if (forms.length === 0) return;
-
-  const response = await new Promise(resolve => {
-    chrome.runtime.sendMessage({ action: 'get_logins', url: window.location.origin }, resolve);
-  });
-
-  if (!response || response.error || !response.logins || response.logins.length === 0) {
-    return;
+  // ── Wait for DOM before running ────────────────────────────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(autoSuggest, 600));
+  } else {
+    setTimeout(autoSuggest, 600);
   }
 
-  // For now, just autofill the first match automatically, or add icon to let user click
-  const login = response.logins[0]; // If there are multiple, a real extension would show a dropdown
-  
-  forms.forEach(({ username, password }) => {
-    // Add icon class to show CryptoNote is active
-    username.classList.add('cn-autofill-icon');
-    
-    // When user clicks the field, autofill it
-    username.addEventListener('focus', () => {
-        if (!username.value) {
-            username.value = login.username;
-            password.value = login.password;
-            // Dispatch events so React/Vue/Angular frameworks pick up the change
-            username.dispatchEvent(new Event('input', { bubbles: true }));
-            password.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    }, { once: true });
-  });
-}
+  // Re-run on dynamic navigation (SPAs)
+  let lastUrl = location.href;
+  new MutationObserver(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      setTimeout(autoSuggest, 800);
+    }
+  }).observe(document, { subtree: true, childList: true });
 
-// Also intercept form submissions for Auto-save
-document.addEventListener('submit', (e) => {
-  const target = e.target;
-  const pw = target.querySelector('input[type="password"]');
-  const un = target.querySelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="email"], input[name*="login"]');
-  
-  if (un && pw && un.value && pw.value) {
-    // Send to background to trigger native save prompt
-    chrome.runtime.sendMessage({
-      action: 'save_login',
-      url: window.location.origin,
-      username: un.value,
-      password: pw.value
-    });
-  }
-});
-
-// Listen for force autofill from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'force_autofill') {
-    const forms = getLoginForms();
-    forms.forEach(({ username, password }) => {
-      username.value = request.username;
-      password.value = request.password;
-      username.dispatchEvent(new Event('input', { bubbles: true }));
-      password.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    sendResponse({ success: true });
-  }
-});
-
-// Run on page load
-setTimeout(requestAutofill, 500);
+})();
