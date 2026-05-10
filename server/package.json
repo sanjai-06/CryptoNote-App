@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote PORT=3001 node server-minimal.js",
-    "dev": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote PORT=3001 nodemon server-minimal.js",
+    "dev": "cross-env NODE_ENV=development nodemon server-minimal.js",
     "start:auth": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote JWT_SECRET=dev_jwt_secret_32chars_min PORT=3001 node server-auth.js",
     "dev:auth": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote JWT_SECRET=dev_jwt_secret_32chars_min PORT=3001 nodemon server-auth.js",
     "start:full": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote JWT_SECRET=dev_jwt_secret_32chars_min SESSION_SECRET=dev_session_secret_32chars_min MASTER_ENCRYPTION_KEY=a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456 REDIS_URL=redis://127.0.0.1:6379 PORT=5001 node server.js",
