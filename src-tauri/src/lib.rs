@@ -100,6 +100,8 @@ pub fn run() {
             sync_configure,
             sync_get_status,
             sync_register,
+            sync_push,
+            sync_pull,
             // OS security
             security_check_device,
             security_biometric_info,

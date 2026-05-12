@@ -183,18 +183,27 @@ pub async fn sync_register(
 pub async fn sync_push(
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    eprintln!("[SYNC] sync_push called");
     let vault = state.vault.lock().map_err(map_err)?;
-    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(map_err)?;
-    
+    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(|e| {
+        eprintln!("[SYNC] get_sync_keys failed: {}", e);
+        map_err(e)
+    })?;
     let vault_json = vault.export_json().map_err(map_err)?;
     let local_version = vault.version();
     drop(vault);
-
+    eprintln!("[SYNC] vault exported v{}, pushing...", local_version);
     let engine = state.sync_engine.lock().map_err(map_err)?;
-    engine.push(vault_json, local_version, &sync_key, &hmac_key).await.map_err(map_err)?;
-    
-    Ok(())
+    {
+        let cfg = engine.config.lock().unwrap();
+        eprintln!("[SYNC] server_url={} user_id={:?}", cfg.server_url, cfg.user_id);
+    }
+    match engine.push(vault_json, local_version, &sync_key, &hmac_key).await {
+        Ok(s) => { eprintln!("[SYNC] push ok: {:?}", s); Ok(()) }
+        Err(e) => { eprintln!("[SYNC] push FAILED: {}", e); Err(map_err(e)) }
+    }
 }
+
 
 #[tauri::command]
 pub async fn sync_pull(
