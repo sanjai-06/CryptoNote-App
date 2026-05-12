@@ -184,47 +184,58 @@ pub async fn sync_push(
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
     eprintln!("[SYNC] sync_push called");
-    let vault = state.vault.lock().map_err(map_err)?;
-    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(|e| {
-        eprintln!("[SYNC] get_sync_keys failed: {}", e);
-        map_err(e)
-    })?;
-    let vault_json = vault.export_json().map_err(map_err)?;
-    let local_version = vault.version();
-    drop(vault);
-    eprintln!("[SYNC] vault exported v{}, pushing...", local_version);
-    let engine = state.sync_engine.lock().map_err(map_err)?;
-    {
-        let cfg = engine.config.lock().unwrap();
-        eprintln!("[SYNC] server_url={} user_id={:?}", cfg.server_url, cfg.user_id);
-    }
-    match engine.push(vault_json, local_version, &sync_key, &hmac_key).await {
-        Ok(s) => { eprintln!("[SYNC] push ok: {:?}", s); Ok(()) }
+    // Extract vault data (sync, no await needed)
+    let (sync_key, hmac_key, vault_json, local_version) = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        let (sk, hk) = vault.get_sync_keys().map_err(|e| {
+            eprintln!("[SYNC] get_sync_keys failed: {}", e);
+            map_err(e)
+        })?;
+        let vj = vault.export_json().map_err(map_err)?;
+        let lv = vault.version();
+        (sk, hk, vj, lv)
+    }; // vault lock released here
+
+    eprintln!("[SYNC] vault exported v{}, building push future...", local_version);
+
+    // Get a Send-safe future from the engine (releases engine lock immediately)
+    let push_fut = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        engine.push_owned(vault_json, local_version, sync_key, hmac_key)
+    }; // engine lock released here
+
+    match push_fut.await {
+        Ok(s)  => { eprintln!("[SYNC] push ok: {:?}", s); Ok(()) }
         Err(e) => { eprintln!("[SYNC] push FAILED: {}", e); Err(map_err(e)) }
     }
 }
-
 
 #[tauri::command]
 pub async fn sync_pull(
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    // Extract keys (sync, no await)
+    let (sync_key, hmac_key) = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        vault.get_sync_keys().map_err(map_err)?
+    }; // vault lock released here
+
+    // Get a Send-safe future from the engine (releases engine lock immediately)
+    let pull_fut = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        engine.pull_owned(sync_key, hmac_key)
+    }; // engine lock released here
+
+    let (vault_json, server_version) = pull_fut.await.map_err(map_err)?;
+
+    // Re-lock vault only for import (no await after this)
     let vault = state.vault.lock().map_err(map_err)?;
-    let (sync_key, hmac_key) = vault.get_sync_keys().map_err(map_err)?;
-    drop(vault);
-    
-    let engine = state.sync_engine.lock().map_err(map_err)?;
-    let (vault_json, server_version) = engine.pull(&sync_key, &hmac_key).await.map_err(map_err)?;
-    drop(engine);
-    
-    let mut vault = state.vault.lock().map_err(map_err)?;
-    // If the server version is newer, overwrite the local vault
     if server_version > vault.version() {
         vault.import_json(&vault_json).map_err(map_err)?;
     }
-    
     Ok(())
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  OS SECURITY COMMANDS

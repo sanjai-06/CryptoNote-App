@@ -97,8 +97,11 @@ export function ItemDetail({ entryId, onClose, onSaved }: Props) {
             // Trigger cloud sync if configured
             if (syncEmail) {
                 syncPush()
-                    .then(() => syncPush && setSyncStatus('Synced' as any))
-                    .catch(() => {});
+                    .then(() => setSyncStatus('Synced' as any))
+                    .catch((err) => {
+                        console.error('[CryptoNote] sync_push failed:', err);
+                        setSyncStatus(('Error:' + String(err)) as any);
+                    });
             }
             onSaved();
             if (!isNew) setIsEditing(false);

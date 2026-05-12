@@ -332,6 +332,98 @@ impl SyncEngine {
         Ok((vault_json, payload.version))
     }
 
+    /// Synchronously extract everything needed for a push, then return
+    /// a Send-safe future. Use this from Tauri commands instead of push().
+    pub fn push_owned(
+        &self,
+        vault_json: String,
+        local_version: i64,
+        sync_key: SecureKey,
+        hmac_key: SecureKey,
+    ) -> impl std::future::Future<Output = Result<SyncStatus>> + Send + 'static {
+        // --- Extract all data while holding the lock (sync, no await) ---
+        let payload = self.build_payload(&vault_json, local_version, &sync_key, &hmac_key);
+        let (server_url, auth_token, tls_cert) = {
+            let cfg = self.config.lock().unwrap();
+            (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone())
+        };
+        let status_ref = self.status.clone();
+        let pending_ref = self.pending.clone();
+        *status_ref.lock().unwrap() = SyncStatus::Syncing;
+
+        // --- All locks released. Return an owned, Send-safe async block ---
+        async move {
+            let payload = payload?;
+            let client = Self::build_client(tls_cert.as_deref())?;
+            let mut req = client.post(format!("{}/api/vault/push", server_url)).json(&payload);
+            if let Some(token) = auth_token { req = req.bearer_auth(token); }
+
+            let response = req.send().await.map_err(|e| {
+                *status_ref.lock().unwrap() = SyncStatus::Offline;
+                anyhow!("Network error: {}", e)
+            })?;
+
+            if !response.status().is_success() {
+                let err = format!("Server error: {}", response.status());
+                *status_ref.lock().unwrap() = SyncStatus::Error(err.clone());
+                return Err(anyhow!("{}", err));
+            }
+
+            let sync_resp: SyncResponse = response.json().await
+                .map_err(|e| anyhow!("Invalid server response: {}", e))?;
+
+            let new_status = if sync_resp.status == "conflict" {
+                SyncStatus::Conflict { server_version: sync_resp.server_version.unwrap_or(0), local_version }
+            } else {
+                SyncStatus::Synced { at: chrono::Utc::now().timestamp() }
+            };
+            *status_ref.lock().unwrap() = new_status.clone();
+            *pending_ref.lock().unwrap() = None;
+            Ok(new_status)
+        }
+    }
+
+    /// Synchronously extract config for a pull, return a Send-safe future.
+    pub fn pull_owned(
+        &self,
+        sync_key: SecureKey,
+        hmac_key: SecureKey,
+    ) -> impl std::future::Future<Output = Result<(String, i64)>> + Send + 'static {
+        let (server_url, auth_token, tls_cert, user_id) = {
+            let cfg = self.config.lock().unwrap();
+            (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone(), cfg.user_id.clone())
+        };
+        let status_ref = self.status.clone();
+        *status_ref.lock().unwrap() = SyncStatus::Syncing;
+
+        async move {
+            let user_id = user_id.ok_or_else(|| anyhow!("Not authenticated – no user_id in sync config"))?;
+            let client = Self::build_client(tls_cert.as_deref())?;
+            let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
+            if let Some(token) = auth_token { req = req.bearer_auth(token); }
+
+            let response = req.send().await.map_err(|_| anyhow!("Network unavailable"))?;
+            let sync_resp: SyncResponse = response.json().await
+                .map_err(|e| anyhow!("Invalid response: {}", e))?;
+
+            let payload = sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server"))?;
+
+            let hmac_input = format!("{}:{}:{}:{}:{}:{}",
+                payload.user_id, payload.device_id, payload.version,
+                payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext);
+            let expected = base64::engine::general_purpose::STANDARD
+                .decode(&payload.hmac).map_err(|_| anyhow!("Invalid HMAC encoding"))?;
+            if !crate::crypto::verify_hmac(&hmac_key, hmac_input.as_bytes(), &expected) {
+                return Err(anyhow!("HMAC verification failed"));
+            }
+
+            let vault_json = crate::crypto::decrypt_string(&sync_key, &payload.encrypted_vault)
+                .map_err(|_| anyhow!("Failed to decrypt pulled vault"))?;
+            *status_ref.lock().unwrap() = SyncStatus::Synced { at: chrono::Utc::now().timestamp() };
+            Ok((vault_json, payload.version))
+        }
+    }
+
     /// Try to flush any pending offline changes to the server.
     pub async fn flush_pending(
         &self,
