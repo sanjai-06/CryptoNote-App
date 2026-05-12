@@ -34,6 +34,7 @@ export function SettingsPage() {
     const [checkingDevice, setCheckingDevice] = useState(false);
     const [showPwGen, setShowPwGen] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
+    const [syncError, setSyncError] = useState('');
 
     useEffect(() => {
         runDeviceCheck();
@@ -55,16 +56,28 @@ export function SettingsPage() {
     }
 
     async function handleSaveSync() {
+        setSyncError('');
+        if (!email.trim()) {
+            setSyncError('Please enter your Account Email before saving.');
+            return;
+        }
+        if (!serverUrl.trim()) {
+            setSyncError('Server URL is required.');
+            return;
+        }
         setIsSavingSync(true);
         try {
             await syncConfigure({
-                server_url: serverUrl,
+                server_url: serverUrl.trim(),
                 device_id: `device-${Math.random().toString(36).slice(2)}`,
-                user_id: email || undefined,
+                user_id: email.trim(),
             });
             setSyncEnabled(true);
+            setSyncError('');
             flash('Sync settings saved ✓');
-        } catch { /* ignore */ }
+        } catch (err: any) {
+            setSyncError(err?.message || 'Failed to save sync settings. Is the app running?');
+        }
         setIsSavingSync(false);
     }
 
@@ -243,6 +256,18 @@ export function SettingsPage() {
                                 <button className='btn btn-primary' onClick={handleSaveSync} disabled={isSavingSync}>
                                     <Cloud size={14} /> {isSavingSync ? 'Saving…' : 'Save Sync Settings'}
                                 </button>
+                                {syncError && (
+                                    <div style={{
+                                        background: 'rgba(239,68,68,0.08)',
+                                        border: '1px solid var(--border-danger)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: '8px 12px',
+                                        fontSize: '0.8rem',
+                                        color: 'var(--color-danger)',
+                                    }}>
+                                        ⚠️ {syncError}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
