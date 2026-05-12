@@ -126,15 +126,16 @@ impl SyncEngine {
         let mut builder = ClientBuilder::new()
             .timeout(Duration::from_secs(30))
             .use_rustls_tls()
-            .tls_built_in_root_certs(false) // Disable system roots → enforce pinning
-            .min_tls_version(reqwest::tls::Version::TLS_1_3);
+            .min_tls_version(reqwest::tls::Version::TLS_1_2);
 
         if let Some(pem) = cert_pem {
+            // Custom cert pinning: disable system roots, use only the provided cert
+            builder = builder.tls_built_in_root_certs(false);
             let cert = reqwest::Certificate::from_pem(pem.as_bytes())
                 .map_err(|e| anyhow!("Invalid TLS certificate: {}", e))?;
             builder = builder.add_root_certificate(cert);
         } else {
-            // Development fallback: accept system certs
+            // No custom cert: trust system roots (Let's Encrypt, Render, etc.)
             builder = builder.tls_built_in_root_certs(true);
         }
 
