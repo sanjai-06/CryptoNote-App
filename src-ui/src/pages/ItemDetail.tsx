@@ -8,8 +8,10 @@ import {
 } from 'lucide-react';
 import { PasswordGenerator } from '../components/PasswordGenerator';
 import {
-    vaultGetEntry, vaultAddEntry, vaultUpdateEntry, vaultDeleteEntry, aiCheckPhishing
+    vaultGetEntry, vaultAddEntry, vaultUpdateEntry, vaultDeleteEntry, aiCheckPhishing,
+    syncPush
 } from '../hooks/useVault';
+import { useVaultStore } from '../store/vaultStore';
 import type { VaultEntry, PhishingRisk } from '../types/vault';
 import { TOTPDisplay } from '../components/TOTPDisplay';
 import { v4 as uuidv4 } from 'uuid';
@@ -42,6 +44,7 @@ const riskColors: Record<PhishingRisk, string> = {
 };
 
 export function ItemDetail({ entryId, onClose, onSaved }: Props) {
+    const { syncEmail, setSyncStatus } = useVaultStore();
     const isNew = entryId === null;
     const [entry, setEntry] = useState<VaultEntry>(emptyEntry());
     const [isEditing, setIsEditing] = useState(isNew);
@@ -91,6 +94,12 @@ export function ItemDetail({ entryId, onClose, onSaved }: Props) {
             } else {
                 await vaultUpdateEntry({ ...entry, updated_at: Math.floor(Date.now() / 1000) });
             }
+            // Trigger cloud sync if configured
+            if (syncEmail) {
+                syncPush()
+                    .then(() => syncPush && setSyncStatus('Synced' as any))
+                    .catch(() => {});
+            }
             onSaved();
             if (!isNew) setIsEditing(false);
         } catch (err: any) {
@@ -103,6 +112,8 @@ export function ItemDetail({ entryId, onClose, onSaved }: Props) {
     async function handleDelete() {
         if (!confirm('Delete this entry? This cannot be undone.')) return;
         await vaultDeleteEntry(entry.id);
+        // Trigger cloud sync after delete
+        if (syncEmail) syncPush().catch(() => {});
         onSaved();
         onClose();
     }

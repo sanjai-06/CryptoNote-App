@@ -2,38 +2,43 @@
 // Compact sync status pill shown in the sidebar
 
 import { useEffect } from 'react';
-import { syncGetStatus } from '../hooks/useVault';
+import { syncGetStatus, syncPush } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import type { SyncStatus } from '../types/vault';
 
 function getSyncLabel(status: SyncStatus | string): { label: string; dotClass: string } {
     // Handle string variants (Serde unit enum variants like "Idle", "Syncing", "Offline")
     if (typeof status === 'string') {
-        if (status === 'Idle') return { label: 'Sync Idle', dotClass: '' };
-        if (status === 'Syncing') return { label: 'Syncing…', dotClass: 'syncing' };
-        if (status === 'Offline') return { label: 'Offline', dotClass: 'offline' };
+        if (status === 'Idle')    return { label: 'Sync Idle',  dotClass: '' };
+        if (status === 'Syncing') return { label: 'Syncing…',   dotClass: 'syncing' };
+        if (status === 'Synced')  return { label: 'Synced ✓',   dotClass: 'synced' };
+        if (status === 'Offline') return { label: 'Offline',    dotClass: 'offline' };
+        if (status === 'Error')   return { label: 'Sync Error', dotClass: 'error' };
         return { label: status, dotClass: '' };
     }
 
-    // Handle object variants (Serde struct/tuple variants or JS initial state)
+    // Handle object variants
     if (status && typeof status === 'object') {
-        if ('Idle' in status) return { label: 'Sync Idle', dotClass: '' };
-        if ('Syncing' in status) return { label: 'Syncing…', dotClass: 'syncing' };
-        if ('Synced' in status) return { label: 'Synced', dotClass: 'synced' };
-        if ('Offline' in status) return { label: 'Offline', dotClass: 'offline' };
-        if ('Conflict' in status) return { label: 'Conflict', dotClass: 'error' };
-        if ('Error' in status) return { label: 'Sync Error', dotClass: 'error' };
+        if ('Idle'     in status) return { label: 'Sync Idle',  dotClass: '' };
+        if ('Syncing'  in status) return { label: 'Syncing…',   dotClass: 'syncing' };
+        if ('Synced'   in status) return { label: 'Synced ✓',   dotClass: 'synced' };
+        if ('Offline'  in status) return { label: 'Offline',    dotClass: 'offline' };
+        if ('Conflict' in status) return { label: 'Conflict',   dotClass: 'error' };
+        if ('Error'    in status) return { label: 'Sync Error', dotClass: 'error' };
     }
     
-    return { label: 'Unknown', dotClass: '' };
+    return { label: 'Sync Idle', dotClass: '' };
 }
 
 export function SyncStatus() {
-    const { syncStatus, setSyncStatus, syncEnabled } = useVaultStore();
+    const { syncStatus, setSyncStatus, syncEmail, syncServerUrl } = useVaultStore();
     const { label, dotClass } = getSyncLabel(syncStatus);
 
+    // Poll status every 5s if sync is configured (email + server URL present)
+    const isSyncConfigured = !!(syncEmail && syncServerUrl);
+
     useEffect(() => {
-        if (!syncEnabled) return;
+        if (!isSyncConfigured) return;
 
         const poll = async () => {
             try {
@@ -43,12 +48,15 @@ export function SyncStatus() {
         };
 
         poll();
-        const interval = setInterval(poll, 15_000);
+        const interval = setInterval(poll, 5_000); // poll every 5s
         return () => clearInterval(interval);
-    }, [syncEnabled, setSyncStatus]);
+    }, [isSyncConfigured, setSyncStatus]);
+
+    // Don't render the pill if sync is not configured at all
+    if (!isSyncConfigured) return null;
 
     return (
-        <div className='sync-pill' title={JSON.stringify(syncStatus)}>
+        <div className='sync-pill' title={`Server: ${syncServerUrl} | User: ${syncEmail}`}>
             <div className={`sync-dot ${dotClass}`} />
             <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{label}</span>
         </div>
