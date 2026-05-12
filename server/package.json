@@ -4,7 +4,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote PORT=3001 node server-minimal.js",
+    "start": "node server-minimal.js",
     "dev": "cross-env NODE_ENV=development nodemon server-minimal.js",
     "start:auth": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote JWT_SECRET=dev_jwt_secret_32chars_min PORT=3001 node server-auth.js",
     "dev:auth": "cross-env NODE_ENV=development MONGO_URI=mongodb://127.0.0.1:27017/cryptonote JWT_SECRET=dev_jwt_secret_32chars_min PORT=3001 nodemon server-auth.js",

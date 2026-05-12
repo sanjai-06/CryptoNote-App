@@ -27,9 +27,23 @@ const logger = winston.createLogger({
 // Basic security headers
 app.use(helmet());
 
-// CORS
+// CORS – allow Tauri desktop app and configured origins
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:1420'];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: function (origin, callback) {
+    // Allow Tauri desktop app (no origin header) and localhost dev
+    if (!origin) return callback(null, true);
+    // Allow tauri:// protocol origins
+    if (origin.startsWith('tauri://') || origin.startsWith('https://tauri.')) return callback(null, true);
+    // Allow configured origins
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // In production allow all (the vault data is encrypted anyway)
+    if (process.env.NODE_ENV === 'production') return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 

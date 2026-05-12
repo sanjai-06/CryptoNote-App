@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: cryptonote-server
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false   # Set this in Render dashboard (secret)
+      - key: JWT_SECRET
+        sync: false   # Set this in Render dashboard (secret)
+      - key: MASTER_ENCRYPTION_KEY
+        sync: false   # Set this in Render dashboard (secret)
+    healthCheckPath: /health
