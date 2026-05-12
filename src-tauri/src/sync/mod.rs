@@ -29,7 +29,7 @@ pub struct SyncConfig {
 impl Default for SyncConfig {
     fn default() -> Self {
         Self {
-            server_url: "https://localhost:3443".to_string(),
+            server_url: "https://sanjai-06-cryptonote-app.onrender.com".to_string(),
             device_id: uuid::Uuid::new_v4().to_string(),
             user_id: None,
             auth_token: None,

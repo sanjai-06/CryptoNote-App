@@ -27,7 +27,7 @@ export function SettingsPage() {
     const { autoLockTimeout, setAutoLockTimeout: storeSetTimeout,
         syncEnabled, setSyncEnabled, setLocked } = useVaultStore();
 
-    const [serverUrl, setServerUrl] = useState('https://localhost:3443');
+    const [serverUrl, setServerUrl] = useState('https://sanjai-06-cryptonote-app.onrender.com');
     const [email, setEmail] = useState('');
     const [isSavingSync, setIsSavingSync] = useState(false);
     const [securityStatus, setSecurityStatus] = useState<{ is_compromised: boolean; findings: string[] } | null>(null);

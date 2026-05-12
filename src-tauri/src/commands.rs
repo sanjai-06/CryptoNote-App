@@ -159,7 +159,7 @@ pub async fn sync_register(
     master_password: String,
     state: State<'_, AppState>,
 ) -> CmdResult<String> {
-    let server_url = "https://localhost:3443".to_string();
+    let server_url = "https://sanjai-06-cryptonote-app.onrender.com".to_string();
     let device_id = uuid::Uuid::new_v4().to_string();
 
     let salt = crate::crypto::generate_salt();
