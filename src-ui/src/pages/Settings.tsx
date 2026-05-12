@@ -25,10 +25,11 @@ const lockOptions = [
 export function SettingsPage() {
     const navigate = useNavigate();
     const { autoLockTimeout, setAutoLockTimeout: storeSetTimeout,
-        syncEnabled, setSyncEnabled, setLocked } = useVaultStore();
+        syncEnabled, setSyncEnabled, setLocked,
+        syncServerUrl, syncEmail, setSyncConfig } = useVaultStore();
 
-    const [serverUrl, setServerUrl] = useState('https://sanjai-06-cryptonote-app.onrender.com');
-    const [email, setEmail] = useState('');
+    const [serverUrl, setServerUrl] = useState(syncServerUrl);
+    const [email, setEmail] = useState(syncEmail);
     const [isSavingSync, setIsSavingSync] = useState(false);
     const [securityStatus, setSecurityStatus] = useState<{ is_compromised: boolean; findings: string[] } | null>(null);
     const [checkingDevice, setCheckingDevice] = useState(false);
@@ -36,8 +37,17 @@ export function SettingsPage() {
     const [savedMsg, setSavedMsg] = useState('');
     const [syncError, setSyncError] = useState('');
 
+    // Re-apply saved sync config to Tauri engine on mount
     useEffect(() => {
         runDeviceCheck();
+        if (syncEmail && syncServerUrl) {
+            syncConfigure({
+                server_url: syncServerUrl,
+                device_id: `device-${syncEmail.replace(/[^a-z0-9]/gi, '')}`,
+                user_id: syncEmail,
+            }).catch(() => {});
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function runDeviceCheck() {
@@ -65,14 +75,16 @@ export function SettingsPage() {
             setSyncError('Server URL is required.');
             return;
         }
+        const deviceId = `device-${email.trim().replace(/[^a-z0-9]/gi, '')}`;
         setIsSavingSync(true);
         try {
             await syncConfigure({
                 server_url: serverUrl.trim(),
-                device_id: `device-${Math.random().toString(36).slice(2)}`,
+                device_id: deviceId,
                 user_id: email.trim(),
             });
-            setSyncEnabled(true);
+            // Persist to localStorage via store
+            setSyncConfig(serverUrl.trim(), email.trim(), true);
             setSyncError('');
             flash('Sync settings saved ✓');
         } catch (err: any) {
@@ -115,6 +127,29 @@ export function SettingsPage() {
                 </div>
             </aside>
 
+            {/* Fixed toast notification – visible regardless of scroll */}
+            {savedMsg && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    right: 24,
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-accent)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 18px',
+                    color: 'var(--accent-1)',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+                    zIndex: 9999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                }}>
+                    ✓ {savedMsg}
+                </div>
+            )}
+
             {/* Main */}
             <div className='main-content' style={{ overflowY: 'auto' }}>
                 <div className='page-header'>
@@ -122,11 +157,6 @@ export function SettingsPage() {
                         <h2>Settings</h2>
                         <p className='text-sm text-muted' style={{ marginTop: 4 }}>Security, sync, and preferences</p>
                     </div>
-                    {savedMsg && (
-                        <span className='badge badge-success' style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
-                            {savedMsg}
-                        </span>
-                    )}
                 </div>
 
                 <div style={{ padding: '24px 32px', maxWidth: 640 }}>

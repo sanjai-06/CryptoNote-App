@@ -10,6 +10,7 @@ import {
 import { SyncStatus } from '../components/SyncStatus';
 import { ItemDetail } from './ItemDetail';
 import { vaultListEntries, vaultLock } from '../hooks/useVault';
+import { syncConfigure } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import type { EntryListItem } from '../types/vault';
 
@@ -31,11 +32,22 @@ export function VaultPage() {
         selectedEntryId, setSelectedEntryId, setLocked, isLocked
     } = useVaultStore();
 
+    const { syncServerUrl, syncEmail } = useVaultStore();
+
     const [isLoading, setIsLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
 
     useEffect(() => {
         loadEntries();
+        // Re-apply saved sync config to Rust engine on every vault load
+        if (syncEmail && syncServerUrl) {
+            syncConfigure({
+                server_url: syncServerUrl,
+                device_id: `device-${syncEmail.replace(/[^a-z0-9]/gi, '')}`,
+                user_id: syncEmail,
+            }).catch(() => {});
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function loadEntries() {

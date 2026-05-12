@@ -4,6 +4,26 @@
 import { create } from 'zustand';
 import type { AnomalyResult, EntryListItem, SyncStatus, VaultMeta } from '../types/vault';
 
+// ── Sync config localStorage persistence ─────────────────────────────────────
+const LS_SYNC_KEY = 'cryptonote_sync_config';
+
+function loadSyncConfig() {
+    try {
+        const raw = localStorage.getItem(LS_SYNC_KEY);
+        if (raw) return JSON.parse(raw) as { serverUrl: string; email: string; enabled: boolean };
+    } catch {}
+    return { serverUrl: 'https://sanjai-06-cryptonote-app.onrender.com', email: '', enabled: false };
+}
+
+function saveSyncConfig(serverUrl: string, email: string, enabled: boolean) {
+    try {
+        localStorage.setItem(LS_SYNC_KEY, JSON.stringify({ serverUrl, email, enabled }));
+    } catch {}
+}
+
+const savedSync = loadSyncConfig();
+
+// ── Store interface ───────────────────────────────────────────────────────────
 interface VaultStore {
     // Auth state
     isLocked: boolean;
@@ -15,7 +35,7 @@ interface VaultStore {
     entries: EntryListItem[];
     setEntries: (entries: EntryListItem[]) => void;
 
-    // Sync
+    // Sync status
     syncStatus: SyncStatus;
     setSyncStatus: (status: SyncStatus) => void;
 
@@ -31,10 +51,15 @@ interface VaultStore {
     setSelectedEntryId: (id: string | null) => void;
 
     // Settings
-    autoLockTimeout: number; // seconds
+    autoLockTimeout: number;
     setAutoLockTimeout: (secs: number) => void;
     syncEnabled: boolean;
     setSyncEnabled: (enabled: boolean) => void;
+
+    // Persisted sync config (survives navigation & restarts)
+    syncServerUrl: string;
+    syncEmail: string;
+    setSyncConfig: (serverUrl: string, email: string, enabled: boolean) => void;
 
     // Reset
     reset: () => void;
@@ -49,21 +74,29 @@ const initialState = {
     searchQuery: '',
     selectedEntryId: null,
     autoLockTimeout: 300,
-    syncEnabled: false,
+    syncEnabled: savedSync.enabled,
+    syncServerUrl: savedSync.serverUrl,
+    syncEmail: savedSync.email,
 };
 
 export const useVaultStore = create<VaultStore>((set) => ({
     ...initialState,
 
-    setLocked: (locked) => set({ isLocked: locked }),
-    setMeta: (meta) => set({ meta }),
-    setEntries: (entries) => set({ entries }),
-    setSyncStatus: (syncStatus) => set({ syncStatus }),
-    setAnomaly: (anomaly) => set({ anomaly }),
-    dismissAnomaly: () => set({ anomaly: null }),
-    setSearchQuery: (searchQuery) => set({ searchQuery }),
+    setLocked:          (locked)      => set({ isLocked: locked }),
+    setMeta:            (meta)        => set({ meta }),
+    setEntries:         (entries)     => set({ entries }),
+    setSyncStatus:      (syncStatus)  => set({ syncStatus }),
+    setAnomaly:         (anomaly)     => set({ anomaly }),
+    dismissAnomaly:     ()            => set({ anomaly: null }),
+    setSearchQuery:     (searchQuery) => set({ searchQuery }),
     setSelectedEntryId: (selectedEntryId) => set({ selectedEntryId }),
     setAutoLockTimeout: (autoLockTimeout) => set({ autoLockTimeout }),
-    setSyncEnabled: (syncEnabled) => set({ syncEnabled }),
+    setSyncEnabled:     (syncEnabled) => set({ syncEnabled }),
+
+    setSyncConfig: (syncServerUrl, syncEmail, syncEnabled) => {
+        saveSyncConfig(syncServerUrl, syncEmail, syncEnabled);
+        set({ syncServerUrl, syncEmail, syncEnabled });
+    },
+
     reset: () => set(initialState),
 }));
