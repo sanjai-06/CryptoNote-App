@@ -26,7 +26,9 @@ cat <<EOF > com.cryptonote.app.json
   "path": "$BINARY_PATH",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://*"
+    "chrome-extension://YOUR_CHROME_EXTENSION_ID_HERE/",
+    "chrome-extension://YOUR_BRAVE_EXTENSION_ID_HERE/",
+    "chrome-extension://YOUR_EDGE_EXTENSION_ID_HERE/"
   ]
 }
 EOF
