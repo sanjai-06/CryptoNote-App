@@ -4,8 +4,9 @@
 import { create } from 'zustand';
 import type { AnomalyResult, EntryListItem, SyncStatus, VaultMeta } from '../types/vault';
 
-// ── Sync config localStorage persistence ─────────────────────────────────────
-const LS_SYNC_KEY = 'cryptonote_sync_config';
+// ── localStorage helpers ───────────────────────────────────────────────────────
+const LS_SYNC_KEY      = 'cryptonote_sync_config';
+const LS_AUTOLOCK_KEY  = 'cryptonote_autolock_secs';
 
 function loadSyncConfig() {
     try {
@@ -16,12 +17,23 @@ function loadSyncConfig() {
 }
 
 function saveSyncConfig(serverUrl: string, email: string, enabled: boolean) {
-    try {
-        localStorage.setItem(LS_SYNC_KEY, JSON.stringify({ serverUrl, email, enabled }));
-    } catch {}
+    try { localStorage.setItem(LS_SYNC_KEY, JSON.stringify({ serverUrl, email, enabled })); } catch {}
 }
 
-const savedSync = loadSyncConfig();
+function loadAutoLock(): number {
+    try {
+        const v = localStorage.getItem(LS_AUTOLOCK_KEY);
+        if (v !== null) return parseInt(v, 10);
+    } catch {}
+    return 300; // default 5 minutes
+}
+
+function saveAutoLock(secs: number) {
+    try { localStorage.setItem(LS_AUTOLOCK_KEY, String(secs)); } catch {}
+}
+
+const savedSync     = loadSyncConfig();
+const savedAutoLock = loadAutoLock();
 
 // ── Store interface ───────────────────────────────────────────────────────────
 interface VaultStore {
@@ -50,7 +62,7 @@ interface VaultStore {
     selectedEntryId: string | null;
     setSelectedEntryId: (id: string | null) => void;
 
-    // Settings
+    // Settings — persisted
     autoLockTimeout: number;
     setAutoLockTimeout: (secs: number) => void;
     syncEnabled: boolean;
@@ -66,17 +78,17 @@ interface VaultStore {
 }
 
 const initialState = {
-    isLocked: true,
-    meta: null,
-    entries: [],
-    syncStatus: { Idle: null } as SyncStatus,
-    anomaly: null,
-    searchQuery: '',
+    isLocked:       true,
+    meta:           null,
+    entries:        [],
+    syncStatus:     { Idle: null } as SyncStatus,
+    anomaly:        null,
+    searchQuery:    '',
     selectedEntryId: null,
-    autoLockTimeout: 300,
-    syncEnabled: savedSync.enabled,
-    syncServerUrl: savedSync.serverUrl,
-    syncEmail: savedSync.email,
+    autoLockTimeout: savedAutoLock,          // ← loaded from localStorage
+    syncEnabled:    savedSync.enabled,
+    syncServerUrl:  savedSync.serverUrl,
+    syncEmail:      savedSync.email,
 };
 
 export const useVaultStore = create<VaultStore>((set) => ({
@@ -90,8 +102,14 @@ export const useVaultStore = create<VaultStore>((set) => ({
     dismissAnomaly:     ()            => set({ anomaly: null }),
     setSearchQuery:     (searchQuery) => set({ searchQuery }),
     setSelectedEntryId: (selectedEntryId) => set({ selectedEntryId }),
-    setAutoLockTimeout: (autoLockTimeout) => set({ autoLockTimeout }),
-    setSyncEnabled:     (syncEnabled) => set({ syncEnabled }),
+
+    // Persist auto-lock to localStorage on every change
+    setAutoLockTimeout: (autoLockTimeout) => {
+        saveAutoLock(autoLockTimeout);
+        set({ autoLockTimeout });
+    },
+
+    setSyncEnabled: (syncEnabled) => set({ syncEnabled }),
 
     setSyncConfig: (syncServerUrl, syncEmail, syncEnabled) => {
         saveSyncConfig(syncServerUrl, syncEmail, syncEnabled);

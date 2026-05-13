@@ -124,7 +124,8 @@ impl SyncEngine {
     /// Build a TLS-pinned HTTP client.
     fn build_client(cert_pem: Option<&str>) -> Result<Client> {
         let mut builder = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(70))        // Render free tier can take 50s to wake
+            .connect_timeout(Duration::from_secs(65))
             .use_rustls_tls()
             .min_tls_version(reqwest::tls::Version::TLS_1_2);
 
