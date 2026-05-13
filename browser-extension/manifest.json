@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "CryptoNote Autofill",
   "version": "0.2.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnPV6esVHrluzWf6gaEFzsMqW5BblgHwyTSI2gQPcg2wJjJsDg/d74qMg67mPS+O6iKDGJOqn6bq0c6w6bWfLGS7WDF+WsGj/b/41+PqJle3BtWtLANYt/NrfcV5BQkMWhlWHQ4scVIO4XERQp5DPoEqwJg84JXSEhpQK9PFyj6GF+/oH5U3PRE2tMUC5gI39Ez8tSDEWRd4fBilyLfvJIgX1pCVDoeKCg8rmilIYxjNca/eWC1dBM6FI6OhCnTR3wLUiJAzYVY6DBtbOIAEgyTI4DEE+bv+hFRrvP9OSJLabHJL861x150uH0eXit104hHV8jKr0HjKHJbIKlpw/7QIDAQAB",
   "description": "Secure autofill, auto-save, and one-click login for the CryptoNote desktop password manager.",
   "icons": {
     "16":  "icons/icon16.png",
