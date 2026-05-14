@@ -376,20 +376,18 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
         setIsExporting(false);
     }
 
-    async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    async function handleImport() {
         setIsImporting(true);
         try {
             const { importVaultJson } = await import('../lib/importExport');
-            const result = await importVaultJson(file);
-            onFlash(`Imported: ${result.success} added, ${result.skipped} skipped.`);
+            const result = await importVaultJson();
+            if (result) {
+                onFlash(`Imported: ${result.success} added, ${result.skipped} skipped.`);
+            }
         } catch (err: any) {
             onFlash(`Import failed: ${err?.message ?? 'Unknown error'}`);
         }
         setIsImporting(false);
-        e.target.value = ''; // reset
     }
 
     return (
@@ -409,19 +407,9 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
                     <div className='settings-row-label'>Import Vault</div>
                     <div className='settings-row-desc'>Merge entries from a JSON backup</div>
                 </div>
-                <div>
-                    <input
-                        type='file'
-                        accept='.json'
-                        style={{ display: 'none' }}
-                        id='import-file'
-                        onChange={handleImport}
-                        disabled={isImporting}
-                    />
-                    <label htmlFor='import-file' className='btn btn-secondary' style={{ display: 'inline-block', cursor: 'pointer', opacity: isImporting ? 0.5 : 1 }}>
-                        {isImporting ? 'Importing…' : 'Import JSON'}
-                    </label>
-                </div>
+                <button className='btn btn-secondary' onClick={handleImport} disabled={isImporting}>
+                    {isImporting ? 'Importing…' : 'Import JSON'}
+                </button>
             </div>
         </div>
     );

@@ -2,7 +2,6 @@
 // CryptoNote – Tauri IPC bridge: registers commands and app state
 
 use std::sync::Mutex;
-use tauri::State;
 
 pub mod ai;
 pub mod commands;
@@ -74,6 +73,7 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
@@ -101,7 +101,7 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "lock" => {
                         let state = app.state::<AppState>();
-                        let mut vault = state.vault.lock().unwrap();
+                        let vault = state.vault.lock().unwrap();
                         vault.lock();
                         let _ = app.emit("vault-locked", ());
                     }
