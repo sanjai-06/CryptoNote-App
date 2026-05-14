@@ -1,0 +1,9 @@
+{
+  "name": "com.cryptonote.app",
+  "description": "CryptoNote Native Messaging Host",
+  "path": "/run/media/shadoww/New Volume/PROJECTS/CryptoNote/src-tauri/target/debug/cryptonote",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://eikhhgnmionoanbacfcpjfmehbcccmmc/"
+  ]
+}

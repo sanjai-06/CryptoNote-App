@@ -6,6 +6,74 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
+pub fn auto_install_nmh() {
+    let current_exe = std::env::current_exe().unwrap_or_default();
+    if current_exe.as_os_str().is_empty() { return; }
+
+    let exe_path_str = current_exe.to_string_lossy().to_string();
+    let nmh_json = serde_json::json!({
+        "name": "com.cryptonote.app",
+        "description": "CryptoNote Native Messaging Host",
+        "path": exe_path_str,
+        "type": "stdio",
+        "allowed_origins": [
+            "chrome-extension://eikhhgnmionoanbacfcpjfmehbcccmmc/"
+        ]
+    });
+    
+    let json_str = serde_json::to_string_pretty(&nmh_json).unwrap();
+
+    #[cfg(target_os = "linux")]
+    let base_dirs = vec![
+        dirs_next::home_dir().map(|p| p.join(".config/google-chrome")),
+        dirs_next::home_dir().map(|p| p.join(".config/chromium")),
+        dirs_next::home_dir().map(|p| p.join(".config/BraveSoftware/Brave-Browser")),
+    ];
+
+    #[cfg(target_os = "macos")]
+    let base_dirs = vec![
+        dirs_next::home_dir().map(|p| p.join("Library/Application Support/Google/Chrome")),
+        dirs_next::home_dir().map(|p| p.join("Library/Application Support/Chromium")),
+        dirs_next::home_dir().map(|p| p.join("Library/Application Support/BraveSoftware/Brave-Browser")),
+    ];
+
+    #[cfg(not(target_os = "windows"))]
+    for dir_opt in base_dirs {
+        if let Some(dir) = dir_opt {
+            let nmh_dir = dir.join("NativeMessagingHosts");
+            std::fs::create_dir_all(&nmh_dir).ok();
+            let json_path = nmh_dir.join("com.cryptonote.app.json");
+            std::fs::write(json_path, &json_str).ok();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, the JSON file goes in a local app data folder, and we register it in the Registry
+        if let Some(local_app_data) = dirs_next::data_local_dir() {
+            let nmh_dir = local_app_data.join("CryptoNote");
+            std::fs::create_dir_all(&nmh_dir).ok();
+            let json_path = nmh_dir.join("com.cryptonote.app.json");
+            if std::fs::write(&json_path, &json_str).is_ok() {
+                // Register via command line to avoid adding winreg crate
+                let browsers = vec![
+                    "Google\\Chrome",
+                    "Chromium",
+                    "BraveSoftware\\Brave-Browser",
+                    "Microsoft\\Edge",
+                ];
+                for browser in browsers {
+                    let reg_path = format!("HKCU\\Software\\{}\\NativeMessagingHosts\\com.cryptonote.app", browser);
+                    std::process::Command::new("reg")
+                        .args(&["add", &reg_path, "/ve", "/t", "REG_SZ", "/d", json_path.to_str().unwrap(), "/f"])
+                        .spawn()
+                        .ok();
+                }
+            }
+        }
+    }
+}
+
 pub fn start_server(app: AppHandle) {
     std::thread::spawn(move || {
         let listener = match TcpListener::bind("127.0.0.1:0") {
