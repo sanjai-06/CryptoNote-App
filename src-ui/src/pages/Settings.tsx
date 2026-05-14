@@ -408,7 +408,7 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
                     <div className='settings-row-desc'>Merge entries from a JSON backup</div>
                 </div>
                 <button className='btn btn-secondary' onClick={handleImport} disabled={isImporting}>
-                    {isImporting ? 'Importing…' : 'Import JSON'}
+                    {isImporting ? 'Importing…' : 'Import JSON / CSV'}
                 </button>
             </div>
         </div>
