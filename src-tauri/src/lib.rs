@@ -90,23 +90,15 @@ pub fn run() {
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
             use tauri::{Manager, Emitter};
 
-            let show_i = MenuItem::with_id(app, "show", "Show CryptoNote", true, None::<&str>)?;
             let lock_i = MenuItem::with_id(app, "lock", "Lock Vault", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &lock_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&lock_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
                     "lock" => {
                         let state = app.state::<AppState>();
                         let mut vault = state.vault.lock().unwrap();
