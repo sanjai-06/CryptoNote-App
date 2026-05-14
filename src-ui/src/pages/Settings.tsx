@@ -385,7 +385,9 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
                 onFlash(`Imported: ${result.success} added, ${result.skipped} skipped.`);
             }
         } catch (err: any) {
-            onFlash(`Import failed: ${err?.message ?? 'Unknown error'}`);
+            console.error('Import error:', err);
+            const msg = typeof err === 'string' ? err : err?.message ?? 'Unknown error';
+            onFlash(`Import failed: ${msg}`);
         }
         setIsImporting(false);
     }
