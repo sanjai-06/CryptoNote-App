@@ -112,6 +112,7 @@ export async function importVaultJson(): Promise<{ success: number; skipped: num
         const result = Papa.parse(content, {
             header: true,
             skipEmptyLines: true,
+            transformHeader: (header) => header.trim().toLowerCase().replace(/^\uFEFF/, ''),
         });
         if (result.errors.length && !result.data.length) {
             throw new Error(`Failed to parse CSV: ${result.errors[0].message}`);
@@ -119,11 +120,11 @@ export async function importVaultJson(): Promise<{ success: number; skipped: num
         
         // Map common CSV columns (Chrome, Bitwarden, etc.) to VaultEntry
         parsedEntries = result.data.map((row: any) => ({
-            title: row.name || row.title || row.Name || row.Title || 'Imported Entry',
-            username: row.username || row.login_username || row.Username || '',
-            password: row.password || row.login_password || row.Password || '',
-            url: row.url || row.login_uri || row.url || row.Url || '',
-            notes: row.note || row.notes || row.Note || '',
+            title: row.name || row.title || 'Imported Entry',
+            username: row.username || row.login_username || '',
+            password: row.password || row.login_password || '',
+            url: row.url || row.login_uri || '',
+            notes: row.note || row.notes || '',
             totp_secret: row.totp || row.login_totp || '',
             tags: ['Imported']
         }));
@@ -143,25 +144,32 @@ export async function importVaultJson(): Promise<{ success: number; skipped: num
     const existingTitles = new Set(existingItems.map(i => i.title.toLowerCase()));
 
     for (const item of parsedEntries) {
-        if (!item.title || !item.password) {
+        // Skip completely empty rows
+        if (!item.title && !item.username && !item.password && !item.url) {
             skipped++;
             continue;
         }
 
-        if (existingTitles.has(item.title.toLowerCase())) {
+        // Generate a unique title if empty to prevent duplicate skipping
+        let finalTitle = item.title;
+        if (finalTitle === 'Imported Entry') {
+            finalTitle = `${finalTitle} - ${Math.random().toString(36).substring(7)}`;
+        }
+
+        if (existingTitles.has(finalTitle.toLowerCase())) {
             skipped++;
             continue;
         }
 
         const entry: VaultEntry = {
             id: uuidv4(),
-            title: item.title,
+            title: finalTitle,
             username: item.username || '',
-            password: item.password,
+            password: item.password || '',
             url: item.url || '',
             notes: item.notes || '',
             totp_secret: item.totp_secret || '',
-            tags: Array.isArray(item.tags) ? item.tags : [],
+            tags: Array.isArray(item.tags) ? item.tags : ['Imported'],
             created_at: Math.floor(Date.now() / 1000),
             updated_at: Math.floor(Date.now() / 1000),
             version: 1,
@@ -170,6 +178,7 @@ export async function importVaultJson(): Promise<{ success: number; skipped: num
         try {
             await vaultAddEntry(entry);
             success++;
+            existingTitles.add(finalTitle.toLowerCase());
         } catch (err) {
             console.error('Failed to import entry', err);
             errors++;
