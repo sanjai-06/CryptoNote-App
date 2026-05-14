@@ -11,12 +11,22 @@ import { SettingsPage } from './pages/Settings';
 import { useVaultStore } from './store/vaultStore';
 import { checkAutoLock, recordActivity } from './hooks/useVault';
 
+import { listen } from '@tauri-apps/api/event';
+
 function AutoLockWatcher() {
     const { isLocked, setLocked } = useVaultStore();
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (isLocked) return;
+        // Listen for "vault-locked" events from Rust (e.g. from System Tray)
+        const unlistenPromise = listen('vault-locked', () => {
+            setLocked(true);
+            navigate('/unlock');
+        });
+
+        if (isLocked) return () => {
+            unlistenPromise.then(f => f());
+        };
 
         // Poll for auto-lock every 30 seconds
         const interval = setInterval(async () => {
@@ -39,6 +49,7 @@ function AutoLockWatcher() {
         return () => {
             clearInterval(interval);
             events.forEach((ev) => window.removeEventListener(ev, onActivity));
+            unlistenPromise.then(f => f());
         };
     }, [isLocked, setLocked, navigate]);
 
