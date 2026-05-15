@@ -371,7 +371,9 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
             await exportVault(format);
             onFlash(`Export successful ✓`);
         } catch (e: any) {
-            onFlash(`Export failed: ${e?.message ?? 'Unknown error'}`);
+            console.error('Export error:', e);
+            const msg = typeof e === 'string' ? e : e?.message ?? 'Unknown error';
+            onFlash(`Export failed: ${msg}`);
         }
         setIsExporting(false);
     }
