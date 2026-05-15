@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { VaultEntry } from '../types/vault';
 
 import { isTauri } from './env';
+import Papa from 'papaparse';
 
 export async function exportVault(format: 'json' | 'csv'): Promise<void> {
     // 1. Record the export for anomaly detection
@@ -81,8 +82,6 @@ export async function exportVault(format: 'json' | 'csv'): Promise<void> {
         }, 100);
     }
 }
-
-import Papa from 'papaparse';
 
 export async function importVaultJson(): Promise<{ success: number; skipped: number; errors: number } | null> {
     let content = '';
