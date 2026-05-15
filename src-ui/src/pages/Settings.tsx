@@ -364,12 +364,12 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
 
-    async function handleExport() {
+    async function handleExport(format: 'json' | 'csv') {
         setIsExporting(true);
         try {
-            const { exportVaultJson } = await import('../lib/importExport');
-            await exportVaultJson();
-            onFlash('Export successful ✓');
+            const { exportVault } = await import('../lib/importExport');
+            await exportVault(format);
+            onFlash(`Export successful ✓`);
         } catch (e: any) {
             onFlash(`Export failed: ${e?.message ?? 'Unknown error'}`);
         }
@@ -398,11 +398,16 @@ function DataManagementSection({ onFlash }: { onFlash: (msg: string) => void }) 
             <div className='settings-row'>
                 <div>
                     <div className='settings-row-label'>Export Vault</div>
-                    <div className='settings-row-desc'>Download your unencrypted vault as JSON</div>
+                    <div className='settings-row-desc'>Download your unencrypted vault</div>
                 </div>
-                <button className='btn btn-secondary' onClick={handleExport} disabled={isExporting}>
-                    {isExporting ? 'Exporting…' : 'Export JSON'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className='btn btn-secondary' onClick={() => handleExport('json')} disabled={isExporting}>
+                        JSON
+                    </button>
+                    <button className='btn btn-secondary' onClick={() => handleExport('csv')} disabled={isExporting}>
+                        CSV
+                    </button>
+                </div>
             </div>
             <div className='settings-row'>
                 <div>

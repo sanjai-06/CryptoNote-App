@@ -4,7 +4,7 @@ import type { VaultEntry } from '../types/vault';
 
 import { isTauri } from './env';
 
-export async function exportVaultJson(): Promise<void> {
+export async function exportVault(format: 'json' | 'csv'): Promise<void> {
     // 1. Record the export for anomaly detection
     await aiRecordExport().catch(() => {});
 
@@ -21,22 +21,45 @@ export async function exportVaultJson(): Promise<void> {
         }
     }
 
-    // 3. Create JSON payload
-    const payload = JSON.stringify({
-        source: 'CryptoNote',
-        version: 1,
-        exported_at: Math.floor(Date.now() / 1000),
-        entries
-    }, null, 2);
+    let payload = '';
+    let defaultFilename = '';
+    let mimeType = '';
+    let ext = '';
+    let filterName = '';
 
-    const defaultFilename = `cryptonote_export_${new Date().toISOString().split('T')[0]}.json`;
+    if (format === 'csv') {
+        const csvData = entries.map(e => ({
+            name: e.title,
+            url: e.url,
+            username: e.username,
+            password: e.password,
+            note: e.notes,
+            totp: e.totp_secret
+        }));
+        payload = Papa.unparse(csvData);
+        ext = 'csv';
+        filterName = 'CSV';
+        mimeType = 'text/csv';
+    } else {
+        payload = JSON.stringify({
+            source: 'CryptoNote',
+            version: 1,
+            exported_at: Math.floor(Date.now() / 1000),
+            entries
+        }, null, 2);
+        ext = 'json';
+        filterName = 'JSON';
+        mimeType = 'application/json';
+    }
+
+    defaultFilename = `cryptonote_export_${new Date().toISOString().split('T')[0]}.${ext}`;
 
     if (isTauri()) {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const { writeTextFile } = await import('@tauri-apps/plugin-fs');
         
         const path = await save({
-            filters: [{ name: 'JSON', extensions: ['json'] }],
+            filters: [{ name: filterName, extensions: [ext] }],
             defaultPath: defaultFilename
         });
         
@@ -45,7 +68,7 @@ export async function exportVaultJson(): Promise<void> {
         }
     } else {
         // Fallback for browser environment
-        const blob = new Blob([payload], { type: 'application/json' });
+        const blob = new Blob([payload], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
