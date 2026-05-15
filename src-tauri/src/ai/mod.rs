@@ -8,7 +8,6 @@
 //   1. AnomalyDetector – behavioral heuristics for unlock events
 //   2. PhishingDetector – domain-level phishing analysis for autofill
 
-use anyhow::Result;
 use chrono::{Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;

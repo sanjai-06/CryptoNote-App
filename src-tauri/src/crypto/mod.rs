@@ -9,11 +9,11 @@
 
 use anyhow::{anyhow, Result};
 use argon2::{
-    password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version,
+    Algorithm, Argon2, Params, Version,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit, OsRng as AeadRng},
+    aead::{Aead, KeyInit},
     XChaCha20Poly1305, XNonce,
 };
 use hkdf::Hkdf;
@@ -213,7 +213,7 @@ pub fn decode_salt(s: &str) -> Result<[u8; SALT_LEN]> {
 // ─── HMAC-SHA256 integrity check ──────────────────────────────────────────────
 use hmac::{Hmac, Mac};
 
-type HmacSha256 = Hmac<Sha256>;
+
 
 /// Compute HMAC-SHA256 over `data` using `hmac_key`.
 pub fn compute_hmac(hmac_key: &SecureKey, data: &[u8]) -> Vec<u8> {

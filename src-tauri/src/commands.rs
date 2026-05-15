@@ -157,7 +157,7 @@ pub fn sync_get_status(state: State<'_, AppState>) -> CmdResult<SyncStatus> {
 pub async fn sync_register(
     email: String,
     master_password: String,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> CmdResult<String> {
     let server_url = "https://sanjai-06-cryptonote-app.onrender.com".to_string();
     let device_id = uuid::Uuid::new_v4().to_string();

@@ -3,7 +3,6 @@ use crate::AppState;
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 pub fn auto_install_nmh() {

@@ -193,7 +193,7 @@ fn fallback_delete(service: &str, account: &str) -> Result<()> {
 
 /// Check if the device appears to be rooted (Android) or jailbroken (iOS).
 pub fn check_device_integrity() -> SecurityPostureResult {
-    let mut findings = Vec::new();
+    let findings = Vec::new();
 
     #[cfg(target_os = "android")]
     {

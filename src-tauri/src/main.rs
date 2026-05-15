@@ -52,7 +52,7 @@ fn run_native_messaging_host() {
         let msg = match read_native_message() {
             Ok(Some(m)) => m,
             Ok(None) => break, // EOF
-            Err(e) => {
+            Err(_e) => {
                 // Ignore silent errors
                 break;
             }

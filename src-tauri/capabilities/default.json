@@ -9,6 +9,7 @@
         "core:default",
         "dialog:default",
         "fs:default",
+        "fs:allow-write-text-file",
         "notification:default",
         "os:default",
         "shell:default"
