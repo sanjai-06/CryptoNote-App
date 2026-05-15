@@ -9,15 +9,18 @@ import { SetupPage } from './pages/Setup';
 import { VaultPage } from './pages/Vault';
 import { SettingsPage } from './pages/Settings';
 import { useVaultStore } from './store/vaultStore';
-import { checkAutoLock, recordActivity } from './hooks/useVault';
+import { checkAutoLock, recordActivity, setAutoLockTimeout } from './hooks/useVault';
 
 import { listen } from '@tauri-apps/api/event';
 
 function AutoLockWatcher() {
-    const { isLocked, setLocked } = useVaultStore();
+    const { isLocked, setLocked, autoLockTimeout } = useVaultStore();
     const navigate = useNavigate();
 
     useEffect(() => {
+        // Sync saved timeout setting to Rust backend on load
+        setAutoLockTimeout(autoLockTimeout).catch(() => {});
+        
         // Listen for "vault-locked" events from Rust (e.g. from System Tray)
         const unlistenPromise = listen('vault-locked', () => {
             setLocked(true);
@@ -51,7 +54,7 @@ function AutoLockWatcher() {
             events.forEach((ev) => window.removeEventListener(ev, onActivity));
             unlistenPromise.then(f => f());
         };
-    }, [isLocked, setLocked, navigate]);
+    }, [isLocked, setLocked, navigate, autoLockTimeout]);
 
     return null;
 }
