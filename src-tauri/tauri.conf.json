@@ -2,9 +2,9 @@
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "CryptoNote",
     "version": "0.1.0",
-    "identifier": "com.cryptonote.app",
+    "identifier": "com.cryptonote.desktop",
     "build": {
-        "frontendDist": "../dist",
+        "frontendDist": "../src-ui/dist",
         "devUrl": "http://localhost:1420",
         "beforeDevCommand": "npm run dev",
         "beforeBuildCommand": "npm run build"
