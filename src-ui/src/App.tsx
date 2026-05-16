@@ -59,6 +59,34 @@ function AutoLockWatcher() {
     return null;
 }
 
+function ThemeWatcher() {
+    const { theme } = useVaultStore();
+
+    useEffect(() => {
+        function applyTheme() {
+            let activeTheme = theme;
+            if (activeTheme === 'system') {
+                activeTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            }
+            if (activeTheme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+        }
+
+        applyTheme();
+
+        if (theme === 'system') {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+            mediaQuery.addEventListener('change', applyTheme);
+            return () => mediaQuery.removeEventListener('change', applyTheme);
+        }
+    }, [theme]);
+
+    return null;
+}
+
 function AppRoutes() {
     const { isLocked, anomaly, dismissAnomaly, setLocked } = useVaultStore();
 
@@ -95,6 +123,8 @@ function AppRoutes() {
 export default function App() {
     return (
         <BrowserRouter>
+            <ThemeWatcher />
+            <AutoLockWatcher />
             <AppRoutes />
         </BrowserRouter>
     );

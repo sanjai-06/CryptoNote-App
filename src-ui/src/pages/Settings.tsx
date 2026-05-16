@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, Clock, Cloud, Smartphone, Lock,
-    Key, AlertTriangle, ChevronLeft, RefreshCw
+    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette
 } from 'lucide-react';
 import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
@@ -22,11 +22,18 @@ const lockOptions = [
     { label: 'Never', value: 0 },
 ];
 
+const themeOptions = [
+    { label: 'System Default', value: 'system' },
+    { label: 'Dark Mode', value: 'dark' },
+    { label: 'Light Mode', value: 'light' },
+];
+
 export function SettingsPage() {
     const navigate = useNavigate();
     const { autoLockTimeout, setAutoLockTimeout: storeSetTimeout,
         syncEnabled, setSyncEnabled, setLocked,
-        syncServerUrl, syncEmail, setSyncConfig } = useVaultStore();
+        syncServerUrl, syncEmail, setSyncConfig,
+        theme, setTheme } = useVaultStore();
 
     const [serverUrl, setServerUrl] = useState(syncServerUrl);
     const [email, setEmail] = useState(syncEmail);
@@ -213,6 +220,27 @@ export function SettingsPage() {
                                 <div className='settings-row-desc'>XChaCha20-Poly1305 + Argon2id</div>
                             </div>
                             <span className='badge badge-info'>Enabled</span>
+                        </div>
+                    </div>
+
+                    {/* ── Appearance ───────────────────────────────────────── */}
+                    <div className='settings-section'>
+                        <div className='settings-section-title'><Palette size={13} style={{ display: 'inline', marginRight: 6 }} />Appearance</div>
+                        <div className='settings-row'>
+                            <div>
+                                <div className='settings-row-label'>Theme</div>
+                                <div className='settings-row-desc'>Customize the look and feel of the app</div>
+                            </div>
+                            <select
+                                className='form-select'
+                                value={theme}
+                                onChange={(e) => setTheme(e.target.value as 'system' | 'light' | 'dark')}
+                                style={{ width: 'auto', minWidth: '140px' }}
+                            >
+                                {themeOptions.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 

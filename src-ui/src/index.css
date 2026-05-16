@@ -55,6 +55,45 @@
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  
+  /* Background layers */
+  --bg-base:      #f4f7f9;
+  --bg-surface:   #ffffff;
+  --bg-elevated:  #ffffff;
+  --bg-hover:     #eef2f6;
+  --bg-glass:     rgba(255, 255, 255, 0.85);
+
+  /* Brand gradient - slightly darker for contrast */
+  --accent-1:     #059669;  /* Emerald 600 */
+  --accent-2:     #0284c7;  /* Sky 600 */
+  --accent-3:     #6d28d9;  /* Purple 700 */
+
+  /* Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --text-accent:    #059669;
+
+  /* Borders */
+  --border:         rgba(0, 0, 0, 0.08);
+  --border-accent:  rgba(5, 150, 105, 0.25);
+  --border-danger:  rgba(239, 68, 68, 0.3);
+
+  /* Semantic colors */
+  --color-success:  #059669;
+  --color-warning:  #d97706;
+  --color-danger:   #dc2626;
+  --color-info:     #0284c7;
+
+  /* Shadows */
+  --shadow-sm:  0 2px 4px rgba(0,0,0,0.05);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.12);
+  --shadow-accent: 0 0 16px rgba(5, 150, 105, 0.15);
+}
+
 /* ── Reset ───────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;

@@ -7,6 +7,21 @@ import type { AnomalyResult, EntryListItem, SyncStatus, VaultMeta } from '../typ
 // ── localStorage helpers ───────────────────────────────────────────────────────
 const LS_SYNC_KEY      = 'cryptonote_sync_config';
 const LS_AUTOLOCK_KEY  = 'cryptonote_autolock_secs';
+const LS_THEME_KEY     = 'cryptonote_theme';
+
+type AppTheme = 'light' | 'dark' | 'system';
+
+function loadTheme(): AppTheme {
+    try {
+        const t = localStorage.getItem(LS_THEME_KEY);
+        if (t === 'light' || t === 'dark' || t === 'system') return t;
+    } catch {}
+    return 'system';
+}
+
+function saveTheme(theme: AppTheme) {
+    try { localStorage.setItem(LS_THEME_KEY, theme); } catch {}
+}
 
 function loadSyncConfig() {
     try {
@@ -34,6 +49,7 @@ function saveAutoLock(secs: number) {
 
 const savedSync     = loadSyncConfig();
 const savedAutoLock = loadAutoLock();
+const savedTheme    = loadTheme();
 
 // ── Store interface ───────────────────────────────────────────────────────────
 interface VaultStore {
@@ -63,6 +79,8 @@ interface VaultStore {
     setSelectedEntryId: (id: string | null) => void;
 
     // Settings — persisted
+    theme: AppTheme;
+    setTheme: (theme: AppTheme) => void;
     autoLockTimeout: number;
     setAutoLockTimeout: (secs: number) => void;
     syncEnabled: boolean;
@@ -85,6 +103,7 @@ const initialState = {
     anomaly:        null,
     searchQuery:    '',
     selectedEntryId: null,
+    theme:          savedTheme,              // ← loaded from localStorage
     autoLockTimeout: savedAutoLock,          // ← loaded from localStorage
     syncEnabled:    savedSync.enabled,
     syncServerUrl:  savedSync.serverUrl,
@@ -102,6 +121,11 @@ export const useVaultStore = create<VaultStore>((set) => ({
     dismissAnomaly:     ()            => set({ anomaly: null }),
     setSearchQuery:     (searchQuery) => set({ searchQuery }),
     setSelectedEntryId: (selectedEntryId) => set({ selectedEntryId }),
+
+    setTheme: (theme) => {
+        saveTheme(theme);
+        set({ theme });
+    },
 
     // Persist auto-lock to localStorage on every change
     setAutoLockTimeout: (autoLockTimeout) => {
