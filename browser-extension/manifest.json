@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "CryptoNote Autofill",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnPV6esVHrluzWf6gaEFzsMqW5BblgHwyTSI2gQPcg2wJjJsDg/d74qMg67mPS+O6iKDGJOqn6bq0c6w6bWfLGS7WDF+WsGj/b/41+PqJle3BtWtLANYt/NrfcV5BQkMWhlWHQ4scVIO4XERQp5DPoEqwJg84JXSEhpQK9PFyj6GF+/oH5U3PRE2tMUC5gI39Ez8tSDEWRd4fBilyLfvJIgX1pCVDoeKCg8rmilIYxjNca/eWC1dBM6FI6OhCnTR3wLUiJAzYVY6DBtbOIAEgyTI4DEE+bv+hFRrvP9OSJLabHJL861x150uH0eXit104hHV8jKr0HjKHJbIKlpw/7QIDAQAB",
-  "description": "Secure autofill, auto-save, and one-click login for the CryptoNote desktop password manager.",
+  "description": "Secure autofill, auto-save, and one-click login for the CryptoNote password manager. Works with Chrome and Firefox.",
   "icons": {
     "16":  "icons/icon16.png",
     "48":  "icons/icon48.png",
@@ -18,13 +18,14 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
     },
-    "default_title": "CryptoNote – Click to open vault"
+    "default_title": "CryptoNote – Click to autofill"
   },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "permissions": [
@@ -32,10 +33,17 @@
     "storage",
     "activeTab",
     "scripting",
-    "clipboardWrite"
+    "clipboardWrite",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://*/*",
     "https://*/*"
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "cryptonote@autofill.app",
+      "strict_min_version": "109.0"
+    }
+  }
 }

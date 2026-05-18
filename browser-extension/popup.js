@@ -1,5 +1,8 @@
 // browser-extension/popup.js
 // Enhanced popup with save prompt, search, favicons, fill button, and add-new modal
+// Compatible with Chrome and Firefox
+
+const sessionStore = chrome.storage.session || chrome.storage.local;
 
 document.addEventListener('DOMContentLoaded', async () => {
   // ── DOM refs ────────────────────────────────────────────────────────────────
@@ -233,7 +236,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderLogins(allLogins);
 
     // Check for pending save prompt from content script
-    chrome.storage.session.get(['pendingSave'], ({ pendingSave: ps }) => {
+    // Check for pending save prompt from content script
+    sessionStore.get(['pendingSave'], (result) => {
+      const ps = result?.pendingSave;
       if (ps && ps.url) {
         pendingSave = ps;
         savePromptUrl.textContent = ps.url;
@@ -277,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       username: pendingSave.username,
       password: pendingSave.password,
     });
-    chrome.storage.session.remove('pendingSave');
+    sessionStore.remove('pendingSave');
     savePrompt.classList.add('hidden');
     showToast('✓ Login saved to vault!');
     allLogins = await fetchLogins();
@@ -285,7 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   btnSaveDism.addEventListener('click', () => {
-    chrome.storage.session.remove('pendingSave');
+    sessionStore.remove('pendingSave');
     savePrompt.classList.add('hidden');
     pendingSave = null;
   });
