@@ -5,13 +5,14 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Plus, Search, Lock, Settings, Shield, Globe,
-    CreditCard, Wifi, FileText, Key
+    CreditCard, Wifi, FileText, Key, ShieldCheck
 } from 'lucide-react';
 import { SyncStatus } from '../components/SyncStatus';
 import { ItemDetail } from './ItemDetail';
 import { vaultListEntries, vaultLock } from '../hooks/useVault';
 import { syncConfigure } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
+import { PasswordHealthDashboard } from '../components/PasswordHealth';
 import type { EntryListItem } from '../types/vault';
 
 function getCategoryIcon(url?: string): string {
@@ -36,6 +37,7 @@ export function VaultPage() {
 
     const [isLoading, setIsLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showHealth, setShowHealth] = useState(false);
 
     useEffect(() => {
         loadEntries();
@@ -80,6 +82,7 @@ export function VaultPage() {
 
     const navItems = [
         { label: 'All Items', icon: <Key size={16} />, path: '/vault' },
+        { label: 'Password Health', icon: <ShieldCheck size={16} />, path: '#health', action: () => setShowHealth(true) },
         { label: 'Settings', icon: <Settings size={16} />, path: '/settings' },
     ];
 
@@ -99,7 +102,7 @@ export function VaultPage() {
                     <div
                         key={item.path}
                         className={`sidebar-nav-item ${item.path === '/vault' ? 'active' : ''}`}
-                        onClick={() => navigate(item.path)}
+                        onClick={() => item.action ? item.action() : navigate(item.path)}
                     >
                         {item.icon}
                         {item.label}
@@ -134,6 +137,14 @@ export function VaultPage() {
                         />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            className='btn btn-ghost'
+                            style={{ gap: 6, padding: '8px 12px' }}
+                            onClick={() => setShowHealth(true)}
+                            title='Password Health'
+                        >
+                            <ShieldCheck size={15} /> Health
+                        </button>
                         <button
                             className='btn btn-primary'
                             style={{ gap: 6, padding: '8px 14px' }}
@@ -206,6 +217,13 @@ export function VaultPage() {
                     )}
                 </div>
             </div>
+
+            {showHealth && (
+                <PasswordHealthDashboard
+                    onClose={() => setShowHealth(false)}
+                    onSelectEntry={(id) => setSelectedEntryId(id)}
+                />
+            )}
         </div>
     );
 }
