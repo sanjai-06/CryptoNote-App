@@ -8,6 +8,8 @@ import type { AnomalyResult, EntryListItem, SyncStatus, VaultMeta } from '../typ
 const LS_SYNC_KEY      = 'cryptonote_sync_config';
 const LS_AUTOLOCK_KEY  = 'cryptonote_autolock_secs';
 const LS_THEME_KEY     = 'cryptonote_theme';
+const LS_BIOMETRIC_KEY = 'cryptonote_biometric_enabled';
+const LS_BIO_PW_KEY    = 'cryptonote_bio_pw';
 
 type AppTheme = 'light' | 'dark' | 'system';
 
@@ -50,6 +52,9 @@ function saveAutoLock(secs: number) {
 const savedSync     = loadSyncConfig();
 const savedAutoLock = loadAutoLock();
 const savedTheme    = loadTheme();
+const savedBiometric = (() => {
+    try { return localStorage.getItem(LS_BIOMETRIC_KEY) === 'true'; } catch { return false; }
+})();
 
 // ── Store interface ───────────────────────────────────────────────────────────
 interface VaultStore {
@@ -91,6 +96,13 @@ interface VaultStore {
     syncEmail: string;
     setSyncConfig: (serverUrl: string, email: string, enabled: boolean) => void;
 
+    // Biometric unlock
+    biometricEnabled: boolean;
+    setBiometricEnabled: (enabled: boolean) => void;
+    storeBiometricPassword: (pw: string) => void;
+    getBiometricPassword: () => string | null;
+    clearBiometricPassword: () => void;
+
     // Reset
     reset: () => void;
 }
@@ -108,6 +120,7 @@ const initialState = {
     syncEnabled:    savedSync.enabled,
     syncServerUrl:  savedSync.serverUrl,
     syncEmail:      savedSync.email,
+    biometricEnabled: savedBiometric,
 };
 
 export const useVaultStore = create<VaultStore>((set) => ({
@@ -138,6 +151,26 @@ export const useVaultStore = create<VaultStore>((set) => ({
     setSyncConfig: (syncServerUrl, syncEmail, syncEnabled) => {
         saveSyncConfig(syncServerUrl, syncEmail, syncEnabled);
         set({ syncServerUrl, syncEmail, syncEnabled });
+    },
+
+    setBiometricEnabled: (biometricEnabled) => {
+        try { localStorage.setItem(LS_BIOMETRIC_KEY, String(biometricEnabled)); } catch {}
+        if (!biometricEnabled) {
+            try { localStorage.removeItem(LS_BIO_PW_KEY); } catch {}
+        }
+        set({ biometricEnabled });
+    },
+    storeBiometricPassword: (pw) => {
+        try { localStorage.setItem(LS_BIO_PW_KEY, btoa(pw)); } catch {}
+    },
+    getBiometricPassword: () => {
+        try {
+            const v = localStorage.getItem(LS_BIO_PW_KEY);
+            return v ? atob(v) : null;
+        } catch { return null; }
+    },
+    clearBiometricPassword: () => {
+        try { localStorage.removeItem(LS_BIO_PW_KEY); } catch {}
     },
 
     reset: () => set(initialState),

@@ -1,25 +1,42 @@
 // src-ui/src/pages/Unlock.tsx
-// Master password unlock screen with strength indicator
+// Master password unlock screen with biometric support
 
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Lock, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Lock, Eye, EyeOff, AlertTriangle, Fingerprint } from 'lucide-react';
 import { vaultUnlock, vaultCreate, vaultExists } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
+import { isTauri } from '../lib/env';
 
 export function UnlockPage() {
     const navigate = useNavigate();
-    const { setLocked, setMeta } = useVaultStore();
+    const { setLocked, setMeta, biometricEnabled, storeBiometricPassword, getBiometricPassword } = useVaultStore();
     const [password, setPassword] = useState('');
     const [showPw, setShowPw] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isBioLoading, setIsBioLoading] = useState(false);
     const [error, setError] = useState('');
     const [failCount, setFailCount] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
 
+    const hasBiometric = biometricEnabled && getBiometricPassword() !== null;
+
     useEffect(() => {
         inputRef.current?.focus();
     }, []);
+
+    async function doUnlock(pw: string) {
+        const meta = await vaultUnlock(pw);
+        setMeta(meta);
+        setLocked(false);
+
+        // Store password for future biometric unlocks
+        if (biometricEnabled) {
+            storeBiometricPassword(pw);
+        }
+
+        setTimeout(() => navigate('/vault'), 0);
+    }
 
     async function handleUnlock(e: React.FormEvent) {
         e.preventDefault();
@@ -27,10 +44,7 @@ export function UnlockPage() {
         setIsLoading(true);
         setError('');
         try {
-            const meta = await vaultUnlock(password);
-            setMeta(meta);
-            setLocked(false);
-            setTimeout(() => navigate('/vault'), 0);
+            await doUnlock(password);
         } catch (err: any) {
             setFailCount((c) => c + 1);
             setError(failCount >= 4
@@ -40,6 +54,43 @@ export function UnlockPage() {
             inputRef.current?.focus();
         } finally {
             setIsLoading(false);
+        }
+    }
+
+    async function handleBiometricUnlock() {
+        setIsBioLoading(true);
+        setError('');
+        try {
+            // Attempt biometric authentication via Tauri plugin
+            if (isTauri()) {
+                try {
+                    const { authenticate } = await import('@tauri-apps/plugin-biometric');
+                    await authenticate('Unlock CryptoNote vault', {
+                        allowDeviceCredential: true,
+                    });
+                } catch (bioErr: any) {
+                    // If biometric plugin is not available (e.g., Linux desktop),
+                    // fall through and use the stored password directly
+                    const errStr = bioErr?.toString() ?? '';
+                    if (errStr.includes('not available') || errStr.includes('not supported') || errStr.includes('plugin')) {
+                        // Platform doesn't support biometrics — skip auth challenge
+                    } else {
+                        throw bioErr; // Real auth failure
+                    }
+                }
+            }
+
+            const storedPw = getBiometricPassword();
+            if (!storedPw) {
+                setError('Biometric password not found. Please unlock with your master password first.');
+                return;
+            }
+
+            await doUnlock(storedPw);
+        } catch (err: any) {
+            setError(err?.toString() ?? 'Biometric authentication failed');
+        } finally {
+            setIsBioLoading(false);
         }
     }
 
@@ -73,7 +124,7 @@ export function UnlockPage() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 autoComplete='current-password'
-                                disabled={isLoading}
+                                disabled={isLoading || isBioLoading}
                                 style={{ paddingRight: 44 }}
                             />
                             <button
@@ -105,7 +156,7 @@ export function UnlockPage() {
                         type='submit'
                         className='btn btn-primary w-full'
                         style={{ marginTop: 24 }}
-                        disabled={!password || isLoading}
+                        disabled={!password || isLoading || isBioLoading}
                     >
                         {isLoading ? (
                             <>
@@ -120,6 +171,42 @@ export function UnlockPage() {
                         )}
                     </button>
                 </form>
+
+                {/* Biometric unlock button */}
+                {hasBiometric && (
+                    <>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            margin: '20px 0', color: 'var(--text-muted)', fontSize: '0.75rem',
+                        }}>
+                            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                            <span>or</span>
+                            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                        </div>
+                        <button
+                            className='btn btn-secondary w-full'
+                            style={{
+                                gap: 10, padding: '12px 16px',
+                                background: 'rgba(0,229,160,0.08)',
+                                border: '1px solid rgba(0,229,160,0.25)',
+                            }}
+                            onClick={handleBiometricUnlock}
+                            disabled={isLoading || isBioLoading}
+                        >
+                            {isBioLoading ? (
+                                <>
+                                    <div className='spin' style={{ width: 16, height: 16, border: '2px solid var(--accent-1)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+                                    Authenticating…
+                                </>
+                            ) : (
+                                <>
+                                    <Fingerprint size={18} style={{ color: 'var(--accent-1)' }} />
+                                    Unlock with Biometrics
+                                </>
+                            )}
+                        </button>
+                    </>
+                )}
 
                 <div className='divider' style={{ margin: '24px 0' }} />
 
@@ -137,3 +224,4 @@ export function UnlockPage() {
         </div>
     );
 }
+

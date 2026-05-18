@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, Clock, Cloud, Smartphone, Lock,
-    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette
+    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette, Fingerprint
 } from 'lucide-react';
 import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
@@ -33,7 +33,8 @@ export function SettingsPage() {
     const { autoLockTimeout, setAutoLockTimeout: storeSetTimeout,
         syncEnabled, setSyncEnabled, setLocked,
         syncServerUrl, syncEmail, setSyncConfig,
-        theme, setTheme } = useVaultStore();
+        theme, setTheme,
+        biometricEnabled, setBiometricEnabled } = useVaultStore();
 
     const [serverUrl, setServerUrl] = useState(syncServerUrl);
     const [email, setEmail] = useState(syncEmail);
@@ -242,6 +243,34 @@ export function SettingsPage() {
                                 ))}
                             </select>
                         </div>
+                    </div>
+
+                    {/* ── Biometric Unlock ─────────────────────────────────── */}
+                    <div className='settings-section'>
+                        <div className='settings-section-title'><Fingerprint size={13} style={{ display: 'inline', marginRight: 6 }} />Biometric Unlock</div>
+                        <div className='settings-row'>
+                            <div>
+                                <div className='settings-row-label'>Unlock with Biometrics</div>
+                                <div className='settings-row-desc'>Use fingerprint or Face ID to unlock your vault</div>
+                            </div>
+                            <label className='toggle'>
+                                <input type='checkbox' checked={biometricEnabled} onChange={(e) => setBiometricEnabled(e.target.checked)} />
+                                <span className='toggle-slider' />
+                            </label>
+                        </div>
+                        {biometricEnabled && (
+                            <div style={{
+                                padding: '10px 14px', marginTop: 4,
+                                background: 'rgba(0,229,160,0.08)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid rgba(0,229,160,0.2)',
+                                fontSize: '0.8rem', color: 'var(--text-secondary)',
+                            }}>
+                                <Fingerprint size={13} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                                After your next master password unlock, biometric unlock will be available.
+                                Your password is stored securely on this device.
+                            </div>
+                        )}
                     </div>
 
                     {/* ── Auto-lock ──────────────────────────────────────── */}

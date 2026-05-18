@@ -41,35 +41,34 @@ function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {
     else if (score >= 20) color = '#f97316';
 
     return (
-        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-            <circle
-                cx={size / 2} cy={size / 2} r={radius}
-                fill="none"
-                stroke="var(--border)"
-                strokeWidth={stroke}
-            />
-            <circle
-                cx={size / 2} cy={size / 2} r={radius}
-                fill="none"
-                stroke={color}
-                strokeWidth={stroke}
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                strokeLinecap="round"
-                style={{ transition: 'stroke-dashoffset 1s ease' }}
-            />
-            <text
-                x="50%" y="50%"
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill="var(--text-primary)"
-                fontSize={size * 0.28}
-                fontWeight={700}
-                style={{ transform: 'rotate(90deg)', transformOrigin: 'center' }}
-            >
+        <div style={{ position: 'relative', width: size, height: size }}>
+            <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+                <circle
+                    cx={size / 2} cy={size / 2} r={radius}
+                    fill="none"
+                    stroke="var(--border)"
+                    strokeWidth={stroke}
+                />
+                <circle
+                    cx={size / 2} cy={size / 2} r={radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={stroke}
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 1s ease' }}
+                />
+            </svg>
+            <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: size * 0.28, fontWeight: 700,
+                color: 'var(--text-primary)',
+            }}>
                 {score}
-            </text>
-        </svg>
+            </div>
+        </div>
     );
 }
 
