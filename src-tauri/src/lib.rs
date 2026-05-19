@@ -57,17 +57,6 @@ pub mod native_messaging_server;
 // ─── App entry point ──────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let vault_path = dirs_next::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("CryptoNote")
-        .join("vault.db");
-
-    if let Some(parent) = vault_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-
-    let app_state = AppState::new(vault_path.to_string_lossy().to_string());
-
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
@@ -86,8 +75,26 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(app_state)
         .setup(|app| {
+            // ── Determine vault path using Tauri's cross-platform path API ──
+            use tauri::Manager;
+
+            let vault_path = app.path().app_data_dir()
+                .unwrap_or_else(|_| {
+                    // Fallback for environments where Tauri path API is unavailable
+                    dirs_next::data_local_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join("CryptoNote")
+                })
+                .join("vault.db");
+
+            if let Some(parent) = vault_path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+
+            let app_state = AppState::new(vault_path.to_string_lossy().to_string());
+            app.manage(app_state);
+
             #[cfg(desktop)]
             {
                 // 1. Auto-install Native Messaging Host JSON
