@@ -97,20 +97,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     return (res && res.logins) ? res.logins : [];
   }
 
-  // ── Render logins ────────────────────────────────────────────────────────────
-  function renderLogins(logins) {
-    loginList.innerHTML = '';
-    listCount.textContent = logins.length > 0 ? `${logins.length}` : '';
-
-    if (logins.length === 0) {
-      loginList.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">🔍</div>
-          <div class="empty-state-title">No logins found</div>
-          <div class="empty-state-desc">Try a different search or add a new login using the + button below.</div>
-        </div>`;
-      return;
-    }
+  // ── Render login items (appends to loginList) ──────────────────────────────
+  function renderLoginItems(logins) {
+    if (logins.length === 0) return;
 
     logins.forEach(login => {
       const item = document.createElement('div');
@@ -221,21 +210,61 @@ document.addEventListener('DOMContentLoaded', async () => {
       newTitle.value = currentHost;
     }
 
-    // Fetch suggested logins for this site first
-    if (currentUrl) {
-      listTitle.textContent = 'Suggested Logins';
-      allLogins = await fetchLogins('', currentUrl);
+    // Always fetch ALL logins from the vault
+    allLogins = await fetchLogins();
+
+    // Split into suggested (matching current site) and others
+    let suggested = [];
+    let others = allLogins;
+
+    if (currentHost) {
+      suggested = allLogins.filter(l => {
+        if (!l.url) return false;
+        try {
+          const entryHost = new URL(l.url).hostname.toLowerCase();
+          const pageHost  = currentHost.toLowerCase();
+          return pageHost === entryHost ||
+                 pageHost.endsWith('.' + entryHost) ||
+                 entryHost.endsWith('.' + pageHost);
+        } catch { return false; }
+      });
+      others = allLogins.filter(l => !suggested.includes(l));
     }
 
-    // Fallback: show all logins
-    if (!allLogins.length) {
-      listTitle.textContent = 'All Vault Logins';
-      allLogins = await fetchLogins();
+    // Render both sections
+    loginList.innerHTML = '';
+    listCount.textContent = allLogins.length > 0 ? `${allLogins.length}` : '';
+
+    if (allLogins.length === 0) {
+      loginList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔍</div>
+          <div class="empty-state-title">No logins found</div>
+          <div class="empty-state-desc">Try a different search or add a new login using the + button below.</div>
+        </div>`;
+    } else {
+      // Suggested section
+      if (suggested.length > 0) {
+        listTitle.textContent = 'Suggested Logins';
+        renderLoginItems(suggested);
+
+        // "Other logins" divider
+        if (others.length > 0) {
+          const divider = document.createElement('div');
+          divider.className = 'section-header';
+          divider.style.padding = '10px 8px 4px';
+          divider.innerHTML = `
+            <span class="section-title">Other Logins</span>
+            <span class="section-count">${others.length}</span>`;
+          loginList.appendChild(divider);
+          renderLoginItems(others);
+        }
+      } else {
+        listTitle.textContent = 'All Vault Logins';
+        renderLoginItems(others);
+      }
     }
 
-    renderLogins(allLogins);
-
-    // Check for pending save prompt from content script
     // Check for pending save prompt from content script
     sessionStore.get(['pendingSave'], (result) => {
       const ps = result?.pendingSave;
@@ -245,6 +274,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         savePrompt.classList.remove('hidden');
       }
     });
+  }
+
+  // Helper: clear list and render flat (used by search, clear, refresh)
+  function renderAll(logins, title) {
+    loginList.innerHTML = '';
+    listTitle.textContent = title || 'All Vault Logins';
+    listCount.textContent = logins.length > 0 ? `${logins.length}` : '';
+    if (logins.length === 0) {
+      loginList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔍</div>
+          <div class="empty-state-title">No logins found</div>
+          <div class="empty-state-desc">Try a different search or add a new login using the + button below.</div>
+        </div>`;
+      return;
+    }
+    renderLoginItems(logins);
   }
 
   // ── Search ──────────────────────────────────────────────────────────────────
@@ -258,10 +304,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (q) {
         listTitle.textContent = 'Search Results';
         const results = await fetchLogins(q, '');
-        renderLogins(results);
+        renderAll(results);
       } else {
         listTitle.textContent = currentUrl ? 'Suggested Logins' : 'All Vault Logins';
-        renderLogins(allLogins);
+        renderAll(allLogins);
       }
     }, 250);
   });
@@ -270,7 +316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     searchInput.value = '';
     clearBtn.classList.add('hidden');
     listTitle.textContent = currentUrl ? 'Suggested Logins' : 'All Vault Logins';
-    renderLogins(allLogins);
+    renderAll(allLogins);
     searchInput.focus();
   });
 
@@ -286,7 +332,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     savePrompt.classList.add('hidden');
     showToast('✓ Login saved to vault!');
     allLogins = await fetchLogins();
-    renderLogins(allLogins);
+    renderAll(allLogins);
   });
 
   btnSaveDism.addEventListener('click', () => {
@@ -345,7 +391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Refresh list
       allLogins = await fetchLogins();
       listTitle.textContent = 'All Vault Logins';
-      renderLogins(allLogins);
+      renderAll(allLogins);
     } else {
       showToast('⚠ Save failed — is the app running?');
     }
