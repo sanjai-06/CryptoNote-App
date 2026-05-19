@@ -117,20 +117,37 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Build frontend
+        run: npm run build
+        working-directory: src-ui
+
       - name: Initialize Tauri Android
         run: npx tauri android init
 
-      - name: Build Android APK
-        run: npx tauri android build --apk
+      - name: Build Android debug APK
+        run: npx tauri android build --apk -- --debug
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
+
+      - name: Find and rename APK
+        run: |
+          mkdir -p dist
+          find src-tauri/gen/android -name "*.apk" -type f | head -20
+          # Copy debug APKs
+          find src-tauri/gen/android -name "*debug*.apk" -type f -exec cp {} dist/ \; 2>/dev/null || true
+          # Also copy universal APKs
+          find src-tauri/gen/android -name "*universal*.apk" -type f -exec cp {} dist/ \; 2>/dev/null || true
+          # Fallback: copy any APK found
+          if [ -z "$(ls -A dist/ 2>/dev/null)" ]; then
+            find src-tauri/gen/android -name "*.apk" -type f -exec cp {} dist/ \; 2>/dev/null || true
+          fi
+          ls -la dist/ || echo "No APKs found"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: cryptonote-android-apk
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: dist/*.apk
           if-no-files-found: warn
 
       - name: Attach APK to Release
@@ -138,7 +155,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          files: dist/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
