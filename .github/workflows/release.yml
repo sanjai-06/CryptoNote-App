@@ -125,7 +125,7 @@ jobs:
         run: npx tauri android init
 
       - name: Build Android debug APK
-        run: npx tauri android build --apk -- --debug
+        run: npx tauri android build --debug
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
 

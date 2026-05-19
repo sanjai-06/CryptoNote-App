@@ -68,6 +68,7 @@ pub fn run() {
 
     let app_state = AppState::new(vault_path.to_string_lossy().to_string());
 
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     // Desktop-only plugins
@@ -139,11 +140,11 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, _event| {
             #[cfg(desktop)]
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
                 // Intercept close event and hide window instead
-                let _ = window.hide();
+                let _ = _window.hide();
                 api.prevent_close();
             }
         })
