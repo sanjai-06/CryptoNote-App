@@ -18,6 +18,12 @@ pub fn vault_exists(path: String) -> bool {
 }
 
 #[tauri::command]
+pub fn vault_is_initialized(state: State<'_, AppState>) -> CmdResult<bool> {
+    let vault = state.vault.lock().map_err(map_err)?;
+    Ok(vault.is_initialized())
+}
+
+#[tauri::command]
 pub async fn vault_create(
     master_password: String,
     state: State<'_, AppState>,

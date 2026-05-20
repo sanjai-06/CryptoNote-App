@@ -30,6 +30,11 @@ export const vaultExists = (path: string): Promise<boolean> =>
         ? tauriInvoke('vault_exists', { path })
         : browser.browserVaultExists();
 
+export const vaultIsInitialized = (): Promise<boolean> =>
+    isTauri()
+        ? tauriInvoke<boolean>('vault_is_initialized')
+        : browser.browserVaultExists();
+
 export const vaultCreate = async (masterPassword: string): Promise<VaultMeta> => {
     if (isTauri()) {
         const meta = await tauriInvoke<VaultMeta>('vault_create', { masterPassword });

@@ -86,6 +86,20 @@ impl Vault {
         Ok(conn)
     }
 
+    /// Check if the vault has been initialized (has a salt stored).
+    pub fn is_initialized(&self) -> bool {
+        let conn = match self.open_db() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        // Check if vault_meta table exists and has a salt
+        conn.query_row(
+            "SELECT value FROM vault_meta WHERE key = 'salt'",
+            [],
+            |row| row.get::<_, String>(0),
+        ).is_ok()
+    }
+
     /// Create a new vault from a master password.
     pub fn create(&self, master_password: &str) -> Result<VaultMeta> {
         let salt = crypto::generate_salt();

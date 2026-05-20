@@ -9,7 +9,7 @@ import { SetupPage } from './pages/Setup';
 import { VaultPage } from './pages/Vault';
 import { SettingsPage } from './pages/Settings';
 import { useVaultStore } from './store/vaultStore';
-import { checkAutoLock, recordActivity, setAutoLockTimeout } from './hooks/useVault';
+import { checkAutoLock, recordActivity, setAutoLockTimeout, vaultIsInitialized } from './hooks/useVault';
 
 import { listen } from '@tauri-apps/api/event';
 
@@ -89,6 +89,40 @@ function ThemeWatcher() {
 
 function AppRoutes() {
     const { isLocked, anomaly, dismissAnomaly, setLocked } = useVaultStore();
+    const [vaultReady, setVaultReady] = useState<boolean | null>(null);
+    const navigate = useNavigate();
+
+    // Check if the vault has been initialized on first render
+    useEffect(() => {
+        vaultIsInitialized()
+            .then((initialized) => {
+                setVaultReady(initialized);
+                if (!initialized) {
+                    navigate('/setup', { replace: true });
+                }
+            })
+            .catch(() => {
+                // If check fails, assume not initialized
+                setVaultReady(false);
+                navigate('/setup', { replace: true });
+            });
+    }, [navigate]);
+
+    // Show loading while checking
+    if (vaultReady === null) {
+        return (
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100vh',
+                color: 'var(--text-secondary)',
+                fontSize: '0.9rem',
+            }}>
+                Loading vault…
+            </div>
+        );
+    }
 
     return (
         <>
@@ -114,7 +148,11 @@ function AppRoutes() {
                     path='/settings'
                     element={isLocked ? <Navigate to='/unlock' replace /> : <SettingsPage />}
                 />
-                <Route path='*' element={<Navigate to='/unlock' replace />} />
+                <Route path='*' element={
+                    vaultReady
+                        ? <Navigate to='/unlock' replace />
+                        : <Navigate to='/setup' replace />
+                } />
             </Routes>
         </>
     );

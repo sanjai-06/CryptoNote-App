@@ -158,6 +158,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Vault
             vault_exists,
+            vault_is_initialized,
             vault_create,
             vault_unlock,
             vault_lock,
