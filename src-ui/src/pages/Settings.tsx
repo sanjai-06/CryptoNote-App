@@ -118,7 +118,7 @@ export function SettingsPage() {
             {/* Sidebar */}
             <aside className='sidebar'>
                 <div className='sidebar-logo'>
-                    <img src={logoImg} alt="" className='logo-icon' style={{ width: 32, height: 32, borderRadius: 8 }} />
+                    <img src={logoImg} alt="" style={{ width: 32, height: 32, borderRadius: 8 }} />
                     <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>CryptoNote</div>
                         <div className='text-xs text-muted'>Settings</div>

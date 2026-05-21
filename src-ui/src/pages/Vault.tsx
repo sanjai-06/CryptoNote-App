@@ -92,7 +92,7 @@ export function VaultPage() {
             {/* Sidebar */}
             <aside className='sidebar'>
                 <div className='sidebar-logo'>
-                    <img src={logoImg} alt="" className='logo-icon' style={{ width: 32, height: 32, borderRadius: 8 }} />
+                    <img src={logoImg} alt="" style={{ width: 32, height: 32, borderRadius: 8 }} />
                     <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>CryptoNote</div>
                         <div className='text-xs text-muted'>{entries.length} items</div>
@@ -208,7 +208,7 @@ export function VaultPage() {
                         />
                     ) : (
                         <div className='empty-state' style={{ flex: 1 }}>
-                            <div className='empty-state-icon'>🔐</div>
+                            <img src={logoImg} alt="" style={{ width: 48, height: 48, opacity: 0.5, marginBottom: 16 }} />
                             <p style={{ fontWeight: 600 }}>Select an item to view details</p>
                             <p className='text-sm text-muted'>Or click "+ New Item" to add a password</p>
                             <button className='btn btn-primary' style={{ marginTop: 8 }} onClick={() => setShowAddModal(true)}>
