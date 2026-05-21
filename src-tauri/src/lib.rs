@@ -79,13 +79,15 @@ pub fn run() {
             // ── Determine vault path using Tauri's cross-platform path API ──
             use tauri::Manager;
 
+            #[cfg(desktop)]
+            let vault_path = dirs_next::data_local_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("CryptoNote")
+                .join("vault.db");
+
+            #[cfg(mobile)]
             let vault_path = app.path().app_data_dir()
-                .unwrap_or_else(|_| {
-                    // Fallback for environments where Tauri path API is unavailable
-                    dirs_next::data_local_dir()
-                        .unwrap_or_else(|| std::path::PathBuf::from("."))
-                        .join("CryptoNote")
-                })
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
                 .join("vault.db");
 
             if let Some(parent) = vault_path.parent() {
