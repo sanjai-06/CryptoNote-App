@@ -7,6 +7,7 @@ import {
     Plus, Search, Lock, Settings, Shield, Globe,
     CreditCard, Wifi, FileText, Key, ShieldCheck
 } from 'lucide-react';
+import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
 import { ItemDetail } from './ItemDetail';
 import { vaultListEntries, vaultLock } from '../hooks/useVault';
@@ -91,7 +92,7 @@ export function VaultPage() {
             {/* Sidebar */}
             <aside className='sidebar'>
                 <div className='sidebar-logo'>
-                    <div className='logo-icon'>🔐</div>
+                    <img src={logoImg} alt="" className='logo-icon' style={{ width: 32, height: 32, borderRadius: 8 }} />
                     <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>CryptoNote</div>
                         <div className='text-xs text-muted'>{entries.length} items</div>

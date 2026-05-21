@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, Eye, EyeOff, AlertTriangle, Fingerprint } from 'lucide-react';
+import logoImg from '../assets/logo-120.png';
 import { vaultUnlock, vaultCreate, vaultExists } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import { isTauri } from '../lib/env';
@@ -100,12 +101,12 @@ export function UnlockPage() {
                 {/* Logo */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 36 }}>
                     <div style={{
-                        width: 64, height: 64, borderRadius: 18,
-                        background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))',
+                        width: 80, height: 80, borderRadius: 20,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        marginBottom: 16, boxShadow: '0 0 32px rgba(0,229,160,0.3)'
+                        marginBottom: 16, 
+                        filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))'
                     }}>
-                        <ShieldCheck size={32} color='#080c10' strokeWidth={2.5} />
+                        <img src={logoImg} alt="CryptoNote" style={{ width: 80, height: 80, borderRadius: 16 }} />
                     </div>
                     <h1 className='gradient-text' style={{ fontSize: '1.75rem' }}>CryptoNote</h1>
                     <p className='text-muted text-sm' style={{ marginTop: 6 }}>Enter your master password to unlock</p>

@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
+import logoImg from '../assets/logo-120.png';
 import { vaultCreate } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 
@@ -66,12 +67,12 @@ export function SetupPage() {
             <div className='auth-card' style={{ width: 480 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32 }}>
                     <div style={{
-                        width: 64, height: 64, borderRadius: 18,
-                        background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))',
+                        width: 80, height: 80, borderRadius: 20,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        marginBottom: 16, boxShadow: '0 0 32px rgba(0,229,160,0.3)'
+                        marginBottom: 16,
+                        filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))'
                     }}>
-                        <ShieldCheck size={32} color='#080c10' strokeWidth={2.5} />
+                        <img src={logoImg} alt="CryptoNote" style={{ width: 80, height: 80, borderRadius: 16 }} />
                     </div>
                     <h2 className='gradient-text'>Create Your Vault</h2>
                     <p className='text-muted text-sm' style={{ marginTop: 6 }}>
