@@ -1,7 +1,7 @@
 // src-ui/src/pages/Vault.tsx
 // Main vault view: sidebar nav + entry list + detail panel
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Plus, Search, Lock, Settings, Shield, Globe,
@@ -10,9 +10,10 @@ import {
 import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
 import { ItemDetail } from './ItemDetail';
-import { vaultListEntries, vaultLock } from '../hooks/useVault';
+import { vaultListEntries, vaultLock, syncPull } from '../hooks/useVault';
 import { syncConfigure } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
+import { isTauri } from '../lib/env';
 import { PasswordHealthDashboard } from '../components/PasswordHealth';
 import type { EntryListItem } from '../types/vault';
 
@@ -34,11 +35,23 @@ export function VaultPage() {
         selectedEntryId, setSelectedEntryId, setLocked, isLocked
     } = useVaultStore();
 
-    const { syncServerUrl, syncEmail } = useVaultStore();
+    const { syncServerUrl, syncEmail, setSyncStatus } = useVaultStore();
 
     const [isLoading, setIsLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showHealth, setShowHealth] = useState(false);
+
+    const loadEntries = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const list = await vaultListEntries();
+            setEntries(list);
+        } catch {
+            // Vault may have been locked externally
+        } finally {
+            setIsLoading(false);
+        }
+    }, [setEntries]);
 
     useEffect(() => {
         loadEntries();
@@ -53,17 +66,46 @@ export function VaultPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function loadEntries() {
-        setIsLoading(true);
-        try {
-            const list = await vaultListEntries();
-            setEntries(list);
-        } catch {
-            // Vault may have been locked externally
-        } finally {
-            setIsLoading(false);
+    // ── Auto-sync: poll every 30s + listen for push events from Rust ──────────
+    useEffect(() => {
+        if (!syncEmail || !syncServerUrl) return;
+
+        // Pull from server and refresh list if vault changed
+        const doPull = async () => {
+            try {
+                await syncPull();
+                // vault://refreshed event will trigger loadEntries via listener below
+            } catch { /* offline */ }
+        };
+
+        // Interval: silent background pull every 30s
+        const interval = setInterval(doPull, 30_000);
+
+        // Tauri event: fired by Rust when THIS device pushed (vault://changed)
+        // or when pull imported new data (vault://refreshed)
+        let unlisten1: (() => void) | null = null;
+        let unlisten2: (() => void) | null = null;
+
+        if (isTauri()) {
+            import('@tauri-apps/api/event').then(({ listen }) => {
+                listen<void>('vault://refreshed', () => {
+                    loadEntries();
+                    setSyncStatus('Synced' as any);
+                }).then(fn => { unlisten1 = fn; });
+
+                listen<void>('vault://changed', () => {
+                    // Another window on this device just pushed — reload list
+                    loadEntries();
+                }).then(fn => { unlisten2 = fn; });
+            });
         }
-    }
+
+        return () => {
+            clearInterval(interval);
+            unlisten1?.();
+            unlisten2?.();
+        };
+    }, [syncEmail, syncServerUrl, loadEntries, setSyncStatus]);
 
     async function handleLock() {
         await vaultLock();

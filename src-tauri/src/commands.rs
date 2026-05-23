@@ -1,8 +1,4 @@
-// src-tauri/src/commands.rs
-// All #[tauri::command] functions, separated from lib.rs to avoid
-// E0255 macro name conflicts (Tauri 2 generates __cmd__xxx names)
-
-use tauri::State;
+use tauri::{State, Emitter};
 use crate::{AppState, CmdResult, map_err};
 use crate::ai::{AnomalyResult, PhishingResult};
 use crate::sync::{SyncConfig, SyncStatus};
@@ -188,6 +184,7 @@ pub async fn sync_register(
 #[tauri::command]
 pub async fn sync_push(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> CmdResult<()> {
     eprintln!("[SYNC] sync_push called");
     // Extract vault data (sync, no await needed)
@@ -211,7 +208,12 @@ pub async fn sync_push(
     }; // engine lock released here
 
     match push_fut.await {
-        Ok(s)  => { eprintln!("[SYNC] push ok: {:?}", s); Ok(()) }
+        Ok(s) => {
+            eprintln!("[SYNC] push ok: {:?}", s);
+            // Notify all windows that the vault changed so they refresh
+            let _ = app.emit("vault://changed", ());
+            Ok(())
+        }
         Err(e) => { eprintln!("[SYNC] push FAILED: {}", e); Err(map_err(e)) }
     }
 }
@@ -219,6 +221,7 @@ pub async fn sync_push(
 #[tauri::command]
 pub async fn sync_pull(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> CmdResult<()> {
     // Extract keys (sync, no await)
     let (sync_key, hmac_key) = {
@@ -235,9 +238,19 @@ pub async fn sync_pull(
     let (vault_json, server_version) = pull_fut.await.map_err(map_err)?;
 
     // Re-lock vault only for import (no await after this)
-    let vault = state.vault.lock().map_err(map_err)?;
-    if server_version > vault.version() {
-        vault.import_json(&vault_json).map_err(map_err)?;
+    let imported = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        if server_version > vault.version() {
+            vault.import_json(&vault_json).map_err(map_err)?;
+            true
+        } else {
+            false
+        }
+    };
+
+    // Only emit refresh event if vault actually changed
+    if imported {
+        let _ = app.emit("vault://refreshed", ());
     }
     Ok(())
 }
