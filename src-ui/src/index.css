@@ -57,29 +57,29 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  
-  /* Background layers */
-  --bg-base:      #f4f7f9;
-  --bg-surface:   #ffffff;
-  --bg-elevated:  #ffffff;
-  --bg-hover:     #eef2f6;
-  --bg-glass:     rgba(255, 255, 255, 0.85);
 
-  /* Brand gradient - slightly darker for contrast */
-  --accent-1:     #059669;  /* Emerald 600 */
-  --accent-2:     #0284c7;  /* Sky 600 */
-  --accent-3:     #6d28d9;  /* Purple 700 */
+  /* Background layers — warm slate, NOT pure white */
+  --bg-base:      #e8ecf0;   /* soft cool-grey page bg */
+  --bg-surface:   #f0f3f6;   /* card / sidebar surface  */
+  --bg-elevated:  #f6f8fa;   /* modals, dropdowns       */
+  --bg-hover:     #dde2e8;   /* hover state             */
+  --bg-glass:     rgba(240, 243, 246, 0.88);
 
-  /* Text */
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-muted:     #94a3b8;
+  /* Brand gradient — vivid but not too saturated */
+  --accent-1:     #059669;   /* Emerald 600 */
+  --accent-2:     #0284c7;   /* Sky 600     */
+  --accent-3:     #6d28d9;   /* Purple 700  */
+
+  /* Text — dark slate, not jet black */
+  --text-primary:   #1e293b;  /* slate-800  */
+  --text-secondary: #475569;  /* slate-600  */
+  --text-muted:     #94a3b8;  /* slate-400  */
   --text-accent:    #059669;
 
-  /* Borders */
-  --border:         rgba(0, 0, 0, 0.08);
-  --border-accent:  rgba(5, 150, 105, 0.25);
-  --border-danger:  rgba(239, 68, 68, 0.3);
+  /* Borders — soft, barely visible */
+  --border:         rgba(30, 41, 59, 0.10);
+  --border-accent:  rgba(5, 150, 105, 0.28);
+  --border-danger:  rgba(220, 38, 38, 0.30);
 
   /* Semantic colors */
   --color-success:  #059669;
@@ -87,11 +87,11 @@
   --color-danger:   #dc2626;
   --color-info:     #0284c7;
 
-  /* Shadows */
-  --shadow-sm:  0 2px 4px rgba(0,0,0,0.05);
-  --shadow-md:  0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg:  0 8px 32px rgba(0,0,0,0.12);
-  --shadow-accent: 0 0 16px rgba(5, 150, 105, 0.15);
+  /* Shadows — more visible on grey bg than on white */
+  --shadow-sm:  0 2px 6px rgba(30,41,59,0.08);
+  --shadow-md:  0 4px 16px rgba(30,41,59,0.12);
+  --shadow-lg:  0 8px 40px rgba(30,41,59,0.18);
+  --shadow-accent: 0 0 16px rgba(5, 150, 105, 0.18);
 }
 
 /* ── Reset ───────────────────────────────────────────────── */
