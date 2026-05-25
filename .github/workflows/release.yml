@@ -141,13 +141,12 @@ jobs:
 
       - name: Build Android release APK (arm64 only, stripped)
         run: |
-          # Build release APK — arm64 only, no debug symbols
-          npx tauri android build --apk \
-            --target aarch64 \
-            -- --release
+          # tauri android build is release mode by default (no --debug flag needed)
+          # Do NOT pass -- --release, Tauri already adds it internally
+          npx tauri android build --apk --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
-          # Strip debug symbols from the shared library to cut ~200MB
+          # Strip debug symbols from the shared library to cut size
           CARGO_PROFILE_RELEASE_STRIP: "symbols"
           # Optimize for size, not speed
           CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
