@@ -135,9 +135,9 @@ jobs:
             size="${SIZES[$dir]}"
             target="$ANDROID_RES/$dir"
             mkdir -p "$target"
-            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher.png"
-            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher_foreground.png"
-            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher_round.png"
+            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher.png"
+            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher_foreground.png"
+            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher_round.png"
             echo "✓ $dir (${size}x${size})"
           done
 
