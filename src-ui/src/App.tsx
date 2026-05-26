@@ -10,8 +10,7 @@ import { VaultPage } from './pages/Vault';
 import { SettingsPage } from './pages/Settings';
 import { useVaultStore } from './store/vaultStore';
 import { checkAutoLock, recordActivity, setAutoLockTimeout, vaultIsInitialized } from './hooks/useVault';
-
-import { listen } from '@tauri-apps/api/event';
+import { isTauri } from './lib/env';
 
 function AutoLockWatcher() {
     const { isLocked, setLocked, autoLockTimeout } = useVaultStore();
@@ -22,13 +21,18 @@ function AutoLockWatcher() {
         setAutoLockTimeout(autoLockTimeout).catch(() => {});
         
         // Listen for "vault-locked" events from Rust (e.g. from System Tray)
-        const unlistenPromise = listen('vault-locked', () => {
-            setLocked(true);
-            navigate('/unlock');
-        });
+        let unlistenFn: (() => void) | null = null;
+        if (isTauri()) {
+            import('@tauri-apps/api/event').then(({ listen }) => {
+                listen('vault-locked', () => {
+                    setLocked(true);
+                    navigate('/unlock');
+                }).then(fn => { unlistenFn = fn; });
+            });
+        }
 
         if (isLocked) return () => {
-            unlistenPromise.then(f => f());
+            unlistenFn?.();
         };
 
         // Poll for auto-lock every 30 seconds
@@ -52,7 +56,7 @@ function AutoLockWatcher() {
         return () => {
             clearInterval(interval);
             events.forEach((ev) => window.removeEventListener(ev, onActivity));
-            unlistenPromise.then(f => f());
+            unlistenFn?.();
         };
     }, [isLocked, setLocked, navigate, autoLockTimeout]);
 

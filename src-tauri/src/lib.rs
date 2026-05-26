@@ -67,6 +67,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ));
+        builder = builder.plugin(tauri_plugin_shell::init());
     }
 
     builder
@@ -74,7 +75,6 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // ── Determine vault path using Tauri's cross-platform path API ──
             use tauri::Manager;
