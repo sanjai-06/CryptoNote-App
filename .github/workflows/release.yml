@@ -125,42 +125,45 @@ jobs:
       - name: Initialize Tauri Android
         run: npx tauri android init
 
-      - name: Set up keystore for release signing
+      - name: Inject new skull logo into Android mipmap folders
         run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $HOME/release.keystore
-            echo "KEYSTORE_PATH=$HOME/release.keystore" >> $GITHUB_ENV
-            echo "KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> $GITHUB_ENV
-            echo "SIGNING=release" >> $GITHUB_ENV
-          else
-            echo "No keystore secrets found, building unsigned release APK"
-            echo "SIGNING=unsigned" >> $GITHUB_ENV
-          fi
+          LOGO="src-tauri/icons/icon.png"
+          ANDROID_RES="src-tauri/gen/android/app/src/main/res"
+          # mdpi=48, hdpi=72, xhdpi=96, xxhdpi=144, xxxhdpi=192
+          declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
+          for dir in "${!SIZES[@]}"; do
+            size="${SIZES[$dir]}"
+            target="$ANDROID_RES/$dir"
+            mkdir -p "$target"
+            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher.png"
+            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher_foreground.png"
+            # Round icon: circular crop
+            convert "$LOGO" -resize ${size}x${size} \
+              \( +clone -threshold -1 -negate \
+                 -fill white -draw "circle $((size/2)),$((size/2)) $((size/2)),0" \) \
+              -alpha off -compose CopyOpacity -composite \
+              "$target/ic_launcher_round.png"
+            echo "✓ $dir (${size}x${size})"
+          done
 
-      - name: Build Android release APK (arm64 only, stripped)
+      - name: Build Android debug APK (arm64 only, auto-signed)
         run: |
-          # tauri android build is release mode by default (no --debug flag needed)
-          # Do NOT pass -- --release, Tauri already adds it internally
-          npx tauri android build --apk --target aarch64
+          # --debug APKs are automatically signed with a debug keystore
+          # and can be installed on any Android device without a release keystore
+          npx tauri android build --apk --debug --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
-          # Strip debug symbols from the shared library to cut size
-          CARGO_PROFILE_RELEASE_STRIP: "symbols"
-          # Optimize for size, not speed
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
 
       - name: Find, rename and measure APK
         run: |
           mkdir -p dist
-          # Copy release APK
-          find src-tauri/gen/android -name "*release*.apk" -o -name "*Release*.apk" | \
-            xargs -I{} cp {} dist/cryptonote-arm64-release.apk 2>/dev/null || true
+          # Look for debug APKs first
+          find src-tauri/gen/android -name "*debug*.apk" -type f | \
+            head -1 | xargs -I{} cp {} dist/cryptonote-arm64.apk 2>/dev/null || true
           # Fallback: any APK
           if [ -z "$(ls dist/*.apk 2>/dev/null)" ]; then
-            find src-tauri/gen/android -name "*.apk" | head -1 | \
-              xargs -I{} cp {} dist/cryptonote-arm64-release.apk 2>/dev/null || true
+            find src-tauri/gen/android -name "*.apk" -type f | \
+              head -1 | xargs -I{} cp {} dist/cryptonote-arm64.apk 2>/dev/null || true
           fi
           echo "=== APK sizes ==="
           ls -lh dist/*.apk 2>/dev/null || echo "No APKs found"
