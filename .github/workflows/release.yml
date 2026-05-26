@@ -114,7 +114,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libssl-dev
+            libssl-dev \
+            imagemagick
 
       - name: Install npm dependencies
         run: npm ci
@@ -129,20 +130,14 @@ jobs:
         run: |
           LOGO="src-tauri/icons/icon.png"
           ANDROID_RES="src-tauri/gen/android/app/src/main/res"
-          # mdpi=48, hdpi=72, xhdpi=96, xxhdpi=144, xxxhdpi=192
           declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
           for dir in "${!SIZES[@]}"; do
             size="${SIZES[$dir]}"
             target="$ANDROID_RES/$dir"
             mkdir -p "$target"
-            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher.png"
-            convert "$LOGO" -resize ${size}x${size} "$target/ic_launcher_foreground.png"
-            # Round icon: circular crop
-            convert "$LOGO" -resize ${size}x${size} \
-              \( +clone -threshold -1 -negate \
-                 -fill white -draw "circle $((size/2)),$((size/2)) $((size/2)),0" \) \
-              -alpha off -compose CopyOpacity -composite \
-              "$target/ic_launcher_round.png"
+            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher.png"
+            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher_foreground.png"
+            magick "$LOGO" -resize ${size}x${size} "$target/ic_launcher_round.png"
             echo "✓ $dir (${size}x${size})"
           done
 
