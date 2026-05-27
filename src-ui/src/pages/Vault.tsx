@@ -199,7 +199,7 @@ export function VaultPage() {
                 </div>
 
                 {/* Vault layout: list + detail */}
-                <div className='vault-layout'>
+                <div className={`vault-layout${selectedEntryId ? ' detail-open' : ''}`}>
                     {/* Entry list */}
                     <div className='entry-list'>
                         {isLoading ? (
@@ -236,12 +236,29 @@ export function VaultPage() {
 
                     {/* Detail panel */}
                     {selectedEntryId ? (
-                        <ItemDetail
-                            key={selectedEntryId}
-                            entryId={selectedEntryId}
-                            onClose={() => setSelectedEntryId(null)}
-                            onSaved={loadEntries}
-                        />
+                        <>
+                            {/* Mobile back button */}
+                            <div className='mobile-back-btn' style={{
+                                display: 'none',
+                                padding: '10px 16px',
+                                borderBottom: '1px solid var(--border)',
+                                background: 'var(--bg-surface)',
+                            }}>
+                                <button
+                                    className='btn btn-ghost'
+                                    style={{ gap: 6, padding: '6px 10px', fontSize: '0.85rem' }}
+                                    onClick={() => setSelectedEntryId(null)}
+                                >
+                                    ← Back
+                                </button>
+                            </div>
+                            <ItemDetail
+                                key={selectedEntryId}
+                                entryId={selectedEntryId}
+                                onClose={() => setSelectedEntryId(null)}
+                                onSaved={loadEntries}
+                            />
+                        </>
                     ) : showAddModal ? (
                         <ItemDetail
                             entryId={null}

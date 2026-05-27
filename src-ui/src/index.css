@@ -883,3 +883,207 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 .opacity-50 { opacity: 0.5; }
 .cursor-pointer { cursor: pointer; }
 .select-text { user-select: text; }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 640px)
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* ── Auth card: full width on mobile ── */
+  .auth-card {
+    width: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    padding: 48px 24px 40px;
+    border: none;
+    box-shadow: none;
+  }
+
+  .auth-layout {
+    align-items: flex-start;
+  }
+
+  /* ── App shell: column layout (content on top, nav on bottom) ── */
+  .app-shell {
+    flex-direction: column;
+  }
+
+  /* ── Sidebar → bottom tab bar ── */
+  .sidebar {
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    min-height: unset;
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    padding: 0;
+    gap: 0;
+    order: 99; /* push to bottom */
+    /* Safe area for notched/gesture phones */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Hide logo and sync pill in the bottom tab bar */
+  .sidebar-logo,
+  .sidebar > .sync-pill,
+  .sidebar > div:has(.sync-pill) {
+    display: none;
+  }
+
+  /* Nav items become horizontal tabs */
+  .sidebar-nav-item {
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 4px;
+    gap: 4px;
+    font-size: 0.65rem;
+    border-left: none;
+    border-top: 2px solid transparent;
+    text-align: center;
+  }
+
+  .sidebar-nav-item.active {
+    border-left-color: transparent;
+    border-top-color: var(--accent-1);
+  }
+
+  /* Lock button at bottom */
+  .sidebar > button:last-child {
+    width: 100%;
+    border-radius: 0;
+    justify-content: center;
+    font-size: 0.75rem;
+    padding: 10px;
+  }
+
+  /* ── Main content: takes all remaining height ── */
+  .main-content {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* ── Top bar: compact on mobile ── */
+  .topbar {
+    height: 52px;
+    min-height: 52px;
+    padding: 0 14px;
+    gap: 8px;
+    /* Safe area for notched phones (top) */
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* ── Search bar: full width on mobile ── */
+  .search-bar {
+    max-width: unset;
+    flex: 1;
+  }
+
+  /* ── Vault layout: stack vertically ── */
+  .vault-layout {
+    flex-direction: column;
+  }
+
+  /* ── Entry list: full width, fills screen ── */
+  .entry-list {
+    width: 100%;
+    min-width: unset;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    /* When an item is selected, hide the list so detail fills screen */
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  /* When entry detail is visible, hide the list (JS toggle via class) */
+  .vault-layout.detail-open .entry-list {
+    display: none;
+  }
+
+  /* ── Entry detail: full screen on mobile ── */
+  .entry-detail {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  /* Hide detail when no item selected */
+  .vault-layout:not(.detail-open) .entry-detail {
+    display: none;
+  }
+
+  /* ── Settings: single column ── */
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 20px 16px 0;
+  }
+
+  .settings-content {
+    padding: 16px;
+  }
+
+  /* ── Cards and forms: full width ── */
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* ── Buttons: larger touch targets ── */
+  .btn {
+    min-height: 44px;
+    padding: 10px 18px;
+  }
+
+  /* ── Modal: full screen ── */
+  .modal-overlay > div,
+  [role="dialog"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    top: auto !important;
+    margin: 0 !important;
+  }
+
+  /* ── Typography scale down ── */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+
+  /* Show mobile back button */
+  .mobile-back-btn {
+    display: block !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TABLET  (641px – 1024px)
+   ═══════════════════════════════════════════════════════════ */
+@media (min-width: 641px) and (max-width: 1024px) {
+
+  /* Narrow sidebar */
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+  }
+
+  /* Narrow entry list */
+  .entry-list {
+    width: 240px;
+    min-width: 240px;
+  }
+
+  /* Auth card: narrower */
+  .auth-card {
+    width: 380px;
+    padding: 40px 32px;
+  }
+}
