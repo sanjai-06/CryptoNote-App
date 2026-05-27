@@ -152,30 +152,50 @@ jobs:
       - name: Find, rename and measure APK
         run: |
           mkdir -p dist
-          # Look for debug APKs first
-          find src-tauri/gen/android -name "*debug*.apk" -type f | \
-            head -1 | xargs -I{} cp {} dist/cryptonote-arm64.apk 2>/dev/null || true
-          # Fallback: any APK
-          if [ -z "$(ls dist/*.apk 2>/dev/null)" ]; then
-            find src-tauri/gen/android -name "*.apk" -type f | \
-              head -1 | xargs -I{} cp {} dist/cryptonote-arm64.apk 2>/dev/null || true
+          echo "=== All APKs generated ==="
+          find src-tauri/gen/android -name "*.apk" -type f | sort
+
+          # Prefer the arm64-specific debug APK over the universal one
+          # Gradle creates: app-arm64-v8a-debug.apk AND app-universal-debug.apk
+          # We only want the arm64 one (smaller, correct arch)
+          APK=$(find src-tauri/gen/android -name "*arm64*debug*.apk" -o -name "*debug*arm64*.apk" 2>/dev/null | head -1)
+
+          # Fallback: any debug APK that is NOT universal
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "*debug*.apk" -not -name "*universal*" -type f | head -1)
           fi
-          echo "=== APK sizes ==="
-          ls -lh dist/*.apk 2>/dev/null || echo "No APKs found"
+
+          # Last resort: first debug APK found
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "*debug*.apk" -type f | head -1)
+          fi
+
+          if [ -n "$APK" ]; then
+            cp "$APK" dist/cryptonote-arm64-debug.apk
+            echo "✓ Copied: $APK"
+          else
+            echo "No APK found!"
+            exit 1
+          fi
+
+          echo "=== Final APK ==="
+          ls -lh dist/*.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: cryptonote-android-arm64-release
-          path: dist/*.apk
-          if-no-files-found: warn
+          name: cryptonote-android-arm64
+          path: dist/cryptonote-arm64-debug.apk
+          if-no-files-found: error
+          overwrite: true
 
       - name: Attach APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: dist/*.apk
+          fail_on_unmatched_files: true
+          files: dist/cryptonote-arm64-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
