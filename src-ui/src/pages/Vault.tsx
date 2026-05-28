@@ -1,12 +1,9 @@
 // src-ui/src/pages/Vault.tsx
-// Main vault view: sidebar nav + entry list + detail panel
+// Main vault view – fully responsive: mobile-first, desktop-enhanced
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-    Plus, Search, Lock, Settings, Shield, Globe,
-    CreditCard, Wifi, FileText, Key, ShieldCheck
-} from 'lucide-react';
+import { Plus, Search, Lock, Settings, Key, ShieldCheck, ChevronRight, X } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
 import { ItemDetail } from './ItemDetail';
@@ -17,29 +14,45 @@ import { isTauri } from '../lib/env';
 import { PasswordHealthDashboard } from '../components/PasswordHealth';
 import type { EntryListItem } from '../types/vault';
 
+// ── Icon helpers ──────────────────────────────────────────────────────────────
 function getCategoryIcon(url?: string): string {
     if (!url) return '🔑';
     if (url.includes('bank') || url.includes('finance') || url.includes('pay')) return '🏦';
     if (url.includes('google') || url.includes('gmail')) return '🎨';
     if (url.includes('github') || url.includes('gitlab')) return '⚙️';
-    if (url.includes('facebook') || url.includes('twitter') || url.includes('instagram')) return '💬';
-    if (url.includes('amazon') || url.includes('shop')) return '🛒';
+    if (url.includes('facebook') || url.includes('twitter') || url.includes('instagram') || url.includes('linkedin')) return '💬';
+    if (url.includes('amazon') || url.includes('shop') || url.includes('ebay')) return '🛒';
     if (url.includes('apple') || url.includes('icloud')) return '🍎';
+    if (url.includes('netflix') || url.includes('spotify') || url.includes('youtube')) return '🎵';
+    if (url.includes('mail') || url.includes('email') || url.includes('outlook')) return '📧';
     return '🔐';
 }
 
+function getCategoryColor(url?: string): string {
+    if (!url) return 'linear-gradient(135deg, #6366f1, #8b5cf6)';
+    if (url.includes('bank') || url.includes('finance') || url.includes('pay')) return 'linear-gradient(135deg, #f59e0b, #d97706)';
+    if (url.includes('google') || url.includes('gmail')) return 'linear-gradient(135deg, #3b82f6, #2563eb)';
+    if (url.includes('github')) return 'linear-gradient(135deg, #374151, #111827)';
+    if (url.includes('facebook') || url.includes('twitter') || url.includes('instagram')) return 'linear-gradient(135deg, #8b5cf6, #6d28d9)';
+    if (url.includes('amazon')) return 'linear-gradient(135deg, #f97316, #ea580c)';
+    if (url.includes('netflix')) return 'linear-gradient(135deg, #ef4444, #dc2626)';
+    return 'linear-gradient(135deg, var(--accent-1), var(--accent-2))';
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export function VaultPage() {
     const navigate = useNavigate();
     const {
         entries, setEntries, searchQuery, setSearchQuery,
-        selectedEntryId, setSelectedEntryId, setLocked, isLocked
+        selectedEntryId, setSelectedEntryId, setLocked,
+        syncServerUrl, syncEmail, setSyncStatus,
     } = useVaultStore();
-
-    const { syncServerUrl, syncEmail, setSyncStatus } = useVaultStore();
 
     const [isLoading, setIsLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showHealth, setShowHealth] = useState(false);
+    const [searchFocused, setSearchFocused] = useState(false);
+    const [activeTab, setActiveTab] = useState<'vault' | 'health' | 'settings'>('vault');
 
     const loadEntries = useCallback(async () => {
         setIsLoading(true);
@@ -47,7 +60,7 @@ export function VaultPage() {
             const list = await vaultListEntries();
             setEntries(list);
         } catch {
-            // Vault may have been locked externally
+            // Vault locked externally
         } finally {
             setIsLoading(false);
         }
@@ -55,7 +68,6 @@ export function VaultPage() {
 
     useEffect(() => {
         loadEntries();
-        // Re-apply saved sync config to Rust engine on every vault load
         if (syncEmail && syncServerUrl) {
             syncConfigure({
                 server_url: syncServerUrl,
@@ -66,45 +78,20 @@ export function VaultPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Auto-sync: poll every 30s + listen for push events from Rust ──────────
+    // Auto-sync polling + Tauri event listeners
     useEffect(() => {
         if (!syncEmail || !syncServerUrl) return;
-
-        // Pull from server and refresh list if vault changed
-        const doPull = async () => {
-            try {
-                await syncPull();
-                // vault://refreshed event will trigger loadEntries via listener below
-            } catch { /* offline */ }
-        };
-
-        // Interval: silent background pull every 30s
+        const doPull = async () => { try { await syncPull(); } catch { } };
         const interval = setInterval(doPull, 30_000);
-
-        // Tauri event: fired by Rust when THIS device pushed (vault://changed)
-        // or when pull imported new data (vault://refreshed)
-        let unlisten1: (() => void) | null = null;
-        let unlisten2: (() => void) | null = null;
-
+        let u1: (() => void) | null = null;
+        let u2: (() => void) | null = null;
         if (isTauri()) {
             import('@tauri-apps/api/event').then(({ listen }) => {
-                listen<void>('vault://refreshed', () => {
-                    loadEntries();
-                    setSyncStatus('Synced' as any);
-                }).then(fn => { unlisten1 = fn; });
-
-                listen<void>('vault://changed', () => {
-                    // Another window on this device just pushed — reload list
-                    loadEntries();
-                }).then(fn => { unlisten2 = fn; });
+                listen<void>('vault://refreshed', () => { loadEntries(); setSyncStatus('Synced' as any); }).then(f => { u1 = f; });
+                listen<void>('vault://changed', () => { loadEntries(); }).then(f => { u2 = f; });
             });
         }
-
-        return () => {
-            clearInterval(interval);
-            unlisten1?.();
-            unlisten2?.();
-        };
+        return () => { clearInterval(interval); u1?.(); u2?.(); };
     }, [syncEmail, syncServerUrl, loadEntries, setSyncStatus]);
 
     async function handleLock() {
@@ -115,37 +102,43 @@ export function VaultPage() {
 
     const filtered = useMemo(() => {
         const q = searchQuery.toLowerCase();
-        return entries.filter(
-            (e) =>
-                e.title.toLowerCase().includes(q) ||
-                e.url?.toLowerCase().includes(q) ||
-                e.tags?.some(tag => tag.toLowerCase().includes(q))
+        return entries.filter(e =>
+            e.title.toLowerCase().includes(q) ||
+            e.url?.toLowerCase().includes(q) ||
+            e.tags?.some(t => t.toLowerCase().includes(q))
         );
     }, [entries, searchQuery]);
 
-    const navItems = [
-        { label: 'All Items', icon: <Key size={16} />, path: '/vault' },
-        { label: 'Password Health', icon: <ShieldCheck size={16} />, path: '#health', action: () => setShowHealth(true) },
-        { label: 'Settings', icon: <Settings size={16} />, path: '/settings' },
-    ];
+    const isDetailOpen = !!(selectedEntryId || showAddModal);
+
+    // Navigate via bottom tab
+    function handleTab(tab: 'vault' | 'health' | 'settings') {
+        setActiveTab(tab);
+        if (tab === 'health') { setShowHealth(true); return; }
+        if (tab === 'settings') { navigate('/settings'); return; }
+    }
 
     return (
         <div className='app-shell'>
-            {/* Sidebar */}
+            {/* ── DESKTOP SIDEBAR (hidden on mobile) ── */}
             <aside className='sidebar'>
                 <div className='sidebar-logo'>
-                    <img src={logoImg} alt="" style={{ width: 32, height: 32, borderRadius: 8 }} />
+                    <img src={logoImg} alt='' style={{ width: 32, height: 32, borderRadius: 8 }} />
                     <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>CryptoNote</div>
                         <div className='text-xs text-muted'>{entries.length} items</div>
                     </div>
                 </div>
 
-                {navItems.map((item) => (
+                {[
+                    { label: 'All Items', icon: <Key size={16} />, tab: 'vault' as const },
+                    { label: 'Password Health', icon: <ShieldCheck size={16} />, tab: 'health' as const },
+                    { label: 'Settings', icon: <Settings size={16} />, tab: 'settings' as const },
+                ].map((item) => (
                     <div
-                        key={item.path}
-                        className={`sidebar-nav-item ${item.path === '/vault' ? 'active' : ''}`}
-                        onClick={() => item.action ? item.action() : navigate(item.path)}
+                        key={item.tab}
+                        className={`sidebar-nav-item ${activeTab === item.tab ? 'active' : ''}`}
+                        onClick={() => handleTab(item.tab)}
                     >
                         {item.icon}
                         {item.label}
@@ -153,78 +146,104 @@ export function VaultPage() {
                 ))}
 
                 <div style={{ flex: 1 }} />
-
                 <div style={{ padding: '0 12px 16px' }}>
                     <SyncStatus />
-                    <button
-                        className='btn btn-secondary w-full'
-                        style={{ marginTop: 10, gap: 8 }}
-                        onClick={handleLock}
-                    >
+                    <button className='btn btn-secondary w-full' style={{ marginTop: 10, gap: 8 }} onClick={handleLock}>
                         <Lock size={14} /> Lock Vault
                     </button>
                 </div>
             </aside>
 
-            {/* Main content */}
+            {/* ── MAIN CONTENT ── */}
             <div className='main-content'>
-                {/* Top bar */}
-                <div className='topbar'>
+
+                {/* Mobile header */}
+                <div className='mobile-header'>
+                    <div className='mobile-header-inner'>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <img src={logoImg} alt='' style={{ width: 28, height: 28, borderRadius: 6 }} />
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.2 }}>CryptoNote</div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1 }}>{entries.length} items</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <SyncStatus />
+                            <button className='icon-btn' onClick={handleLock} title='Lock Vault'>
+                                <Lock size={17} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Inline search (mobile) */}
+                    <div className='mobile-search'>
+                        <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <input
+                            type='text'
+                            placeholder='Search…'
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            onFocus={() => setSearchFocused(true)}
+                            onBlur={() => setSearchFocused(false)}
+                            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.875rem' }}
+                        />
+                        {searchQuery && (
+                            <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, display: 'flex' }}>
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Desktop top bar */}
+                <div className='topbar desktop-only'>
                     <div className='search-bar'>
                         <Search size={15} className='search-icon' />
                         <input
                             type='text'
                             placeholder='Search passwords…'
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={e => setSearchQuery(e.target.value)}
                         />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                            className='btn btn-ghost'
-                            style={{ gap: 6, padding: '8px 12px' }}
-                            onClick={() => setShowHealth(true)}
-                            title='Password Health'
-                        >
+                        <button className='btn btn-ghost' style={{ gap: 6, padding: '8px 12px' }} onClick={() => setShowHealth(true)}>
                             <ShieldCheck size={15} /> Health
                         </button>
-                        <button
-                            className='btn btn-primary'
-                            style={{ gap: 6, padding: '8px 14px' }}
-                            onClick={() => setShowAddModal(true)}
-                        >
+                        <button className='btn btn-primary' style={{ gap: 6, padding: '8px 14px' }} onClick={() => setShowAddModal(true)}>
                             <Plus size={15} /> New Item
                         </button>
                     </div>
                 </div>
 
-                {/* Vault layout: list + detail */}
-                <div className={`vault-layout${selectedEntryId ? ' detail-open' : ''}`}>
+                {/* Vault layout */}
+                <div className={`vault-layout${isDetailOpen ? ' detail-open' : ''}`}>
+
                     {/* Entry list */}
                     <div className='entry-list'>
                         {isLoading ? (
                             Array.from({ length: 6 }).map((_, i) => (
-                                <div key={i} style={{ padding: '12px 14px', display: 'flex', gap: 12, alignItems: 'center' }}>
-                                    <div className='skeleton' style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0 }} />
+                                <div key={i} className='entry-skeleton'>
+                                    <div className='skeleton' style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0 }} />
                                     <div style={{ flex: 1 }}>
-                                        <div className='skeleton' style={{ height: 13, width: '65%', marginBottom: 6 }} />
-                                        <div className='skeleton' style={{ height: 11, width: '45%' }} />
+                                        <div className='skeleton' style={{ height: 13, width: '60%', marginBottom: 7 }} />
+                                        <div className='skeleton' style={{ height: 11, width: '40%' }} />
                                     </div>
                                 </div>
                             ))
                         ) : filtered.length === 0 ? (
                             <div className='empty-state' style={{ paddingTop: 60 }}>
-                                <div className='empty-state-icon'>🔍</div>
+                                <div className='empty-state-icon'>{searchQuery ? '🔍' : '🔐'}</div>
                                 <p style={{ fontWeight: 600 }}>
-                                    {searchQuery ? 'No results found' : 'Your vault is empty'}
+                                    {searchQuery ? 'No results' : 'Vault is empty'}
                                 </p>
                                 <p className='text-sm text-muted'>
-                                    {searchQuery ? 'Try a different search' : 'Click "+ New Item" to add your first password'}
+                                    {searchQuery ? 'Try a different search term' : 'Tap + to add your first password'}
                                 </p>
                             </div>
                         ) : (
                             filtered.map((entry) => (
-                                <EntryRow
+                                <EntryCard
                                     key={entry.id}
                                     entry={entry}
                                     selected={selectedEntryId === entry.id}
@@ -234,53 +253,69 @@ export function VaultPage() {
                         )}
                     </div>
 
-                    {/* Detail panel */}
-                    {selectedEntryId ? (
+                    {/* Detail / Add panel */}
+                    {isDetailOpen ? (
                         <>
-                            {/* Mobile back button */}
-                            <div className='mobile-back-btn' style={{
-                                display: 'none',
-                                padding: '10px 16px',
-                                borderBottom: '1px solid var(--border)',
-                                background: 'var(--bg-surface)',
-                            }}>
+                            {/* Mobile back nav strip */}
+                            <div className='mobile-back-btn'>
                                 <button
                                     className='btn btn-ghost'
-                                    style={{ gap: 6, padding: '6px 10px', fontSize: '0.85rem' }}
-                                    onClick={() => setSelectedEntryId(null)}
+                                    style={{ gap: 6, padding: '6px 12px', fontSize: '0.85rem' }}
+                                    onClick={() => { setSelectedEntryId(null); setShowAddModal(false); }}
                                 >
-                                    ← Back
+                                    ← Back to Vault
                                 </button>
                             </div>
                             <ItemDetail
-                                key={selectedEntryId}
-                                entryId={selectedEntryId}
-                                onClose={() => setSelectedEntryId(null)}
-                                onSaved={loadEntries}
+                                key={selectedEntryId ?? 'new'}
+                                entryId={selectedEntryId ?? null}
+                                onClose={() => { setSelectedEntryId(null); setShowAddModal(false); }}
+                                onSaved={() => { setShowAddModal(false); loadEntries(); }}
                             />
                         </>
-                    ) : showAddModal ? (
-                        <ItemDetail
-                            entryId={null}
-                            onClose={() => setShowAddModal(false)}
-                            onSaved={() => { setShowAddModal(false); loadEntries(); }}
-                        />
                     ) : (
-                        <div className='empty-state' style={{ flex: 1 }}>
-                            <img src={logoImg} alt="" style={{ width: 48, height: 48, opacity: 0.5, marginBottom: 16 }} />
-                            <p style={{ fontWeight: 600 }}>Select an item to view details</p>
-                            <p className='text-sm text-muted'>Or click "+ New Item" to add a password</p>
-                            <button className='btn btn-primary' style={{ marginTop: 8 }} onClick={() => setShowAddModal(true)}>
+                        <div className='empty-state desktop-only' style={{ flex: 1 }}>
+                            <img src={logoImg} alt='' style={{ width: 48, height: 48, opacity: 0.4, marginBottom: 16 }} />
+                            <p style={{ fontWeight: 600 }}>Select an item</p>
+                            <p className='text-sm text-muted'>Or add a new password</p>
+                            <button className='btn btn-primary' style={{ marginTop: 12 }} onClick={() => setShowAddModal(true)}>
                                 <Plus size={15} /> New Item
                             </button>
                         </div>
                     )}
                 </div>
+
+                {/* Mobile FAB */}
+                <button
+                    className='mobile-fab'
+                    onClick={() => setShowAddModal(true)}
+                    aria-label='Add new entry'
+                >
+                    <Plus size={24} />
+                </button>
             </div>
+
+            {/* ── MOBILE BOTTOM NAV ── */}
+            <nav className='mobile-bottom-nav'>
+                {[
+                    { tab: 'vault' as const, icon: <Key size={20} />, label: 'Vault' },
+                    { tab: 'health' as const, icon: <ShieldCheck size={20} />, label: 'Health' },
+                    { tab: 'settings' as const, icon: <Settings size={20} />, label: 'Settings' },
+                ].map(item => (
+                    <button
+                        key={item.tab}
+                        className={`bottom-nav-item${activeTab === item.tab ? ' active' : ''}`}
+                        onClick={() => handleTab(item.tab)}
+                    >
+                        {item.icon}
+                        <span>{item.label}</span>
+                    </button>
+                ))}
+            </nav>
 
             {showHealth && (
                 <PasswordHealthDashboard
-                    onClose={() => setShowHealth(false)}
+                    onClose={() => { setShowHealth(false); setActiveTab('vault'); }}
                     onSelectEntry={(id) => setSelectedEntryId(id)}
                 />
             )}
@@ -288,33 +323,34 @@ export function VaultPage() {
     );
 }
 
-function EntryRow({ entry, selected, onClick }: {
+// ── Entry card (mobile-optimized) ─────────────────────────────────────────────
+function EntryCard({ entry, selected, onClick }: {
     entry: EntryListItem;
     selected: boolean;
     onClick: () => void;
 }) {
     const icon = getCategoryIcon(entry.url);
-    const formatted = entry.url?.replace(/^https?:\/\//, '').split('/')[0] ?? '';
+    const color = getCategoryColor(entry.url);
+    const domain = entry.url?.replace(/^https?:\/\//, '').split('/')[0] ?? '';
+    const initials = entry.title.slice(0, 2).toUpperCase();
 
     return (
-        <div className={`entry-item ${selected ? 'selected' : ''}`} onClick={onClick}>
-            <div className='entry-favicon'>{icon}</div>
-            <div className='entry-info' style={{ overflow: 'hidden' }}>
-                <div className='entry-title' style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {entry.title}
-                    {entry.tags && entry.tags.slice(0, 2).map(t => (
-                        <span key={t} className='badge' style={{ background: 'rgba(255,255,255,0.06)', fontSize: '0.65rem', padding: '1px 6px', opacity: 0.8 }}>
-                            {t}
-                        </span>
-                    ))}
-                    {entry.tags && entry.tags.length > 2 && (
-                        <span className='badge' style={{ background: 'rgba(255,255,255,0.06)', fontSize: '0.65rem', padding: '1px 6px', opacity: 0.8 }}>
-                            +{entry.tags.length - 2}
-                        </span>
-                    )}
-                </div>
-                {formatted && <div className='entry-url text-muted'>{formatted}</div>}
+        <div className={`entry-item mobile-entry-card${selected ? ' selected' : ''}`} onClick={onClick}>
+            <div className='entry-favicon' style={{ background: color }}>
+                {icon}
             </div>
+            <div className='entry-info'>
+                <div className='entry-title'>{entry.title}</div>
+                {domain && <div className='entry-url'>{domain}</div>}
+                {entry.tags && entry.tags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
+                        {entry.tags.slice(0, 2).map(t => (
+                            <span key={t} className='mobile-tag'>{t}</span>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <ChevronRight size={16} className='entry-chevron' />
         </div>
     );
 }
