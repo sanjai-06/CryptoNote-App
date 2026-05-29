@@ -141,61 +141,91 @@ jobs:
             echo "✓ $dir (${size}x${size})"
           done
 
-      - name: Build Android debug APK (arm64 only, auto-signed)
+      - name: Build Android RELEASE APK (arm64 only, optimized)
         run: |
-          # --debug APKs are automatically signed with a debug keystore
-          # and can be installed on any Android device without a release keystore
-          npx tauri android build --apk --debug --target aarch64
+          # Release mode = ~10 MB (stripped, optimized)
+          # Debug mode   = ~171 MB (unstripped symbols)
+          npx tauri android build --apk --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
+          CARGO_PROFILE_RELEASE_STRIP: "symbols"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
 
-      - name: Find, rename and measure APK
+      - name: Sign APK with debug keystore (makes it installable)
         run: |
+          # Android debug keystore is always present on the runner
+          # APKs signed with it can be installed on any device (sideloading)
+          DEBUG_KS="$HOME/.android/debug.keystore"
+
+          # Generate debug keystore if it doesn't exist yet
+          if [ ! -f "$DEBUG_KS" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v \
+              -keystore "$DEBUG_KS" \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -storepass android -keypass android
+          fi
+
+          # Find the release APK
           mkdir -p dist
           echo "=== All APKs generated ==="
           find src-tauri/gen/android -name "*.apk" -type f | sort
 
-          # Prefer the arm64-specific debug APK over the universal one
-          # Gradle creates: app-arm64-v8a-debug.apk AND app-universal-debug.apk
-          # We only want the arm64 one (smaller, correct arch)
-          APK=$(find src-tauri/gen/android -name "*arm64*debug*.apk" -o -name "*debug*arm64*.apk" 2>/dev/null | head -1)
-
-          # Fallback: any debug APK that is NOT universal
+          # Prefer arm64 release APK
+          APK=$(find src-tauri/gen/android -name "*arm64*release*.apk" -not -name "*unsigned*" -type f | head -1)
           if [ -z "$APK" ]; then
-            APK=$(find src-tauri/gen/android -name "*debug*.apk" -not -name "*universal*" -type f | head -1)
+            APK=$(find src-tauri/gen/android -name "*release*.apk" -not -name "*universal*" -type f | head -1)
           fi
-
-          # Last resort: first debug APK found
           if [ -z "$APK" ]; then
-            APK=$(find src-tauri/gen/android -name "*debug*.apk" -type f | head -1)
+            APK=$(find src-tauri/gen/android -name "*release*.apk" -type f | head -1)
           fi
-
-          if [ -n "$APK" ]; then
-            cp "$APK" dist/cryptonote-arm64-debug.apk
-            echo "✓ Copied: $APK"
-          else
-            echo "No APK found!"
-            exit 1
+          if [ -z "$APK" ]; then
+            echo "ERROR: No release APK found!"; exit 1
           fi
+          echo "✓ Found: $APK ($(du -sh "$APK" | cut -f1))"
 
-          echo "=== Final APK ==="
-          ls -lh dist/*.apk
+          # Sign with apksigner
+          APKSIGNER="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner"
+          "$APKSIGNER" sign \
+            --ks "$DEBUG_KS" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out dist/cryptonote-arm64.apk \
+            "$APK"
 
-      - name: Upload Android APK
+          echo "=== Final signed APK ==="
+          ls -lh dist/cryptonote-arm64.apk
+          "$APKSIGNER" verify dist/cryptonote-arm64.apk && echo "✓ APK signature valid"
+
+      - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cryptonote-android-arm64
-          path: dist/cryptonote-arm64-debug.apk
+          path: dist/cryptonote-arm64.apk
           if-no-files-found: error
           overwrite: true
 
-      - name: Attach APK to Release
+      - name: Delete old APK assets from release (keep release clean)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: mknejp/delete-release-assets@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          assets: "*.apk"
+          fail-if-no-assets: false
+        continue-on-error: true
+
+      - name: Attach signed APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           fail_on_unmatched_files: true
-          files: dist/cryptonote-arm64-debug.apk
+          files: dist/cryptonote-arm64.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
