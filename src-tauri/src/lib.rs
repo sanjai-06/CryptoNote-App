@@ -57,6 +57,16 @@ pub mod native_messaging_server;
 // ─── App entry point ──────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install a panic hook so crashes appear in Android logcat instead of silently dying
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info.to_string();
+        eprintln!("[CryptoNote PANIC] {}", msg);
+        // Also log location if available
+        if let Some(loc) = info.location() {
+            eprintln!("[CryptoNote PANIC] at {}:{}:{}", loc.file(), loc.line(), loc.column());
+        }
+    }));
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
@@ -191,5 +201,8 @@ pub fn run() {
             record_activity,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running CryptoNote application");
+        .unwrap_or_else(|e| {
+            eprintln!("[CryptoNote FATAL] App failed to start: {}", e);
+            std::process::exit(1);
+        });
 }
