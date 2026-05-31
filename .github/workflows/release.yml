@@ -141,15 +141,22 @@ jobs:
             echo "✓ $dir (${size}x${size})"
           done
 
-      - name: Build Android RELEASE APK (arm64 only, optimized)
+      - name: Build Android APK (release mode, LTO disabled for stability)
         run: |
-          # Release mode = ~10 MB (stripped, optimized)
-          # Debug mode   = ~171 MB (unstripped symbols)
           npx tauri android build --apk --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
-          CARGO_PROFILE_RELEASE_STRIP: "symbols"
+          # ── LTO DISABLED ──────────────────────────────────────────────────
+          # Fat/thin LTO + NDK 27 cross-compiler causes silent miscompilation
+          # crashes on ARM64. This is the #1 cause of "app crashes on open".
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          # ── Safe optimization level ────────────────────────────────────────
           CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+          # ── Allow panic unwind so crashes appear in logcat ─────────────────
+          CARGO_PROFILE_RELEASE_PANIC: "unwind"
+          # ── Strip debug info (NOT symbols — keeps ABI intact on Android) ───
+          CARGO_PROFILE_RELEASE_STRIP: "debuginfo"
 
       - name: Sign APK with debug keystore (makes it installable)
         run: |

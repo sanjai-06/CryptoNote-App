@@ -66,10 +66,18 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
+# Desktop release: balanced optimization
+opt-level = 3
+lto = "thin"          # thin LTO: safe on all platforms, ~same size benefit
+codegen-units = 4    # 1 causes crashes on some Android NDK versions
 debug = false
-# panic = "abort" removed: on Android, abort silently kills the app with no log.
-# 'unwind' lets the Tauri crash handler catch it and log via logcat.
-# strip is controlled via CARGO_PROFILE_RELEASE_STRIP env var in CI.
+
+# Android uses this profile via Tauri's Gradle integration
+# lto=false: fat LTO miscompiles on ARM64 cross-compilation with NDK 27+
+# opt-level=s: size-optimized but safe (z is too aggressive for crypto code)
+[profile.release-android]
+inherits = "release"
+opt-level = "s"
+lto = false            # NO LTO for Android — prevents NDK miscompilation
+codegen-units = 16   # more units = safer cross-compilation
+panic = "unwind"     # unwind so crash is visible in logcat
