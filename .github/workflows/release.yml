@@ -141,72 +141,47 @@ jobs:
             echo "✓ $dir (${size}x${size})"
           done
 
-      - name: Build Android APK (release mode, LTO disabled for stability)
+      - name: Build Android DEBUG APK (auto-signed, known stable)
         run: |
-          npx tauri android build --apk --target aarch64
+          # DEBUG mode facts:
+          #   ✅ Auto-signed with Android debug keystore by Gradle
+          #   ✅ Installs on any device (no "invalid APK")
+          #   ✅ No LTO/optimization miscompilation risk
+          #   ✅ We confirmed this renders the UI (Settings screenshot)
+          #   ⚠️  Larger (~50-100 MB) — acceptable for now
+          npx tauri android build --apk --debug --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
-          # ── LTO DISABLED ──────────────────────────────────────────────────
-          # Fat/thin LTO + NDK 27 cross-compiler causes silent miscompilation
-          # crashes on ARM64. This is the #1 cause of "app crashes on open".
-          CARGO_PROFILE_RELEASE_LTO: "false"
-          # ── Safe optimization level ────────────────────────────────────────
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-          # ── Allow panic unwind so crashes appear in logcat ─────────────────
-          CARGO_PROFILE_RELEASE_PANIC: "unwind"
-          # ── Strip debug info (NOT symbols — keeps ABI intact on Android) ───
-          CARGO_PROFILE_RELEASE_STRIP: "debuginfo"
 
-      - name: Sign APK with debug keystore (makes it installable)
+      - name: Find and copy APK
         run: |
-          # Android debug keystore is always present on the runner
-          # APKs signed with it can be installed on any device (sideloading)
-          DEBUG_KS="$HOME/.android/debug.keystore"
-
-          # Generate debug keystore if it doesn't exist yet
-          if [ ! -f "$DEBUG_KS" ]; then
-            mkdir -p "$HOME/.android"
-            keytool -genkeypair -v \
-              -keystore "$DEBUG_KS" \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -storepass android -keypass android
-          fi
-
-          # Find the release APK
           mkdir -p dist
-          echo "=== All APKs generated ==="
+          echo "=== All APKs ==="
           find src-tauri/gen/android -name "*.apk" -type f | sort
 
-          # Prefer arm64 release APK
-          APK=$(find src-tauri/gen/android -name "*arm64*release*.apk" -not -name "*unsigned*" -type f | head -1)
-          if [ -z "$APK" ]; then
-            APK=$(find src-tauri/gen/android -name "*release*.apk" -not -name "*universal*" -type f | head -1)
-          fi
-          if [ -z "$APK" ]; then
-            APK=$(find src-tauri/gen/android -name "*release*.apk" -type f | head -1)
-          fi
-          if [ -z "$APK" ]; then
-            echo "ERROR: No release APK found!"; exit 1
-          fi
-          echo "✓ Found: $APK ($(du -sh "$APK" | cut -f1))"
+          # Pick arm64 debug APK (not universal)
+          APK=$(find src-tauri/gen/android \
+            \( -name "*arm64*debug*.apk" -o -name "*debug*arm64*.apk" \) \
+            -type f | head -1)
 
-          # Sign with apksigner
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" sign \
-            --ks "$DEBUG_KS" \
-            --ks-key-alias androiddebugkey \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --out dist/cryptonote-arm64.apk \
-            "$APK"
+          # Fallback: any non-universal debug APK
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android \
+              -name "*debug*.apk" -not -name "*universal*" \
+              -type f | head -1)
+          fi
 
-          echo "=== Final signed APK ==="
-          ls -lh dist/cryptonote-arm64.apk
-          "$APKSIGNER" verify dist/cryptonote-arm64.apk && echo "✓ APK signature valid"
+          # Last resort: any APK
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          fi
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK found!"; exit 1
+          fi
+
+          cp "$APK" dist/cryptonote-arm64.apk
+          echo "✓ APK copied: $(du -sh dist/cryptonote-arm64.apk | cut -f1)"
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
