@@ -841,7 +841,84 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 .settings-row-label { font-weight: 500; font-size: 0.875rem; }
 .settings-row-desc  { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
 
+/* ── Biometric unlock ────────────────────────────────────── */
+.bio-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* The big pulsing fingerprint button */
+.bio-pulse-btn {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle, rgba(0,229,160,0.18) 0%, rgba(0,229,160,0.06) 60%, transparent 100%);
+  color: var(--accent-1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Outer ring pulse */
+  box-shadow:
+    0 0 0 0 rgba(0,229,160,0.4),
+    0 0 0 12px rgba(0,229,160,0.08),
+    0 0 0 24px rgba(0,229,160,0.04);
+  animation: bio-ring-pulse 2.5s ease-in-out infinite;
+}
+
+.bio-pulse-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+  background: radial-gradient(circle, rgba(0,229,160,0.28) 0%, rgba(0,229,160,0.1) 60%, transparent 100%);
+}
+
+.bio-pulse-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  animation: none;
+}
+
+.bio-pulse-btn:disabled {
+  cursor: default;
+  animation: none;
+}
+
+@keyframes bio-ring-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(0,229,160,0.5), 0 0 0 12px rgba(0,229,160,0.1), 0 0 0 24px rgba(0,229,160,0.05); }
+  50%  { box-shadow: 0 0 0 8px rgba(0,229,160,0.15), 0 0 0 20px rgba(0,229,160,0.07), 0 0 0 36px rgba(0,229,160,0.02); }
+  100% { box-shadow: 0 0 0 0 rgba(0,229,160,0.5), 0 0 0 12px rgba(0,229,160,0.1), 0 0 0 24px rgba(0,229,160,0.05); }
+}
+
+/* Spinning indicator inside the button when waiting */
+.bio-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(0,229,160,0.2);
+  border-top-color: var(--accent-1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Error pill */
+.bio-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid var(--border-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+  max-width: 320px;
+  text-align: left;
+}
+
 /* ── Password generator panel ────────────────────────────── */
+
 .gen-panel {
   background: var(--bg-surface);
   border: 1px solid var(--border);

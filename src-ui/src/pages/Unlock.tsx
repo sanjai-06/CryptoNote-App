@@ -3,39 +3,47 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Lock, Eye, EyeOff, AlertTriangle, Fingerprint } from 'lucide-react';
+import { Lock, Eye, EyeOff, AlertTriangle, Fingerprint, KeyRound } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
-import { vaultUnlock, vaultCreate, vaultExists } from '../hooks/useVault';
+import { vaultUnlock } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import { isTauri } from '../lib/env';
 
 export function UnlockPage() {
     const navigate = useNavigate();
-    const { setLocked, setMeta, biometricEnabled, storeBiometricPassword, getBiometricPassword } = useVaultStore();
-    const [password, setPassword] = useState('');
-    const [showPw, setShowPw] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+    const {
+        setLocked, setMeta,
+        biometricEnabled, storeBiometricPassword, getBiometricPassword,
+    } = useVaultStore();
+
+    const [password, setPassword]         = useState('');
+    const [showPw, setShowPw]             = useState(false);
+    const [isLoading, setIsLoading]       = useState(false);
     const [isBioLoading, setIsBioLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [failCount, setFailCount] = useState(0);
+    const [error, setError]               = useState('');
+    const [failCount, setFailCount]       = useState(0);
+    const [showPassword, setShowPassword] = useState(false); // show pw form when bio available
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const hasBiometric = biometricEnabled && getBiometricPassword() !== null;
+    const storedPw    = getBiometricPassword();
+    const hasBiometric = biometricEnabled && storedPw !== null;
 
+    // Auto-trigger biometric on load if enrolled
     useEffect(() => {
-        inputRef.current?.focus();
+        if (hasBiometric) {
+            // Small delay so the UI renders first
+            setTimeout(() => handleBiometricUnlock(), 600);
+        } else {
+            inputRef.current?.focus();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function doUnlock(pw: string) {
         const meta = await vaultUnlock(pw);
         setMeta(meta);
         setLocked(false);
-
-        // Store password for future biometric unlocks
-        if (biometricEnabled) {
-            storeBiometricPassword(pw);
-        }
-
+        if (biometricEnabled) storeBiometricPassword(pw);
         setTimeout(() => navigate('/vault'), 0);
     }
 
@@ -49,7 +57,7 @@ export function UnlockPage() {
         } catch (err: any) {
             setFailCount((c) => c + 1);
             setError(failCount >= 4
-                ? '⚠️ Multiple failed attempts detected. Vault will be locked after one more failure.'
+                ? '⚠️ Multiple failed attempts detected.'
                 : err?.toString() ?? 'Invalid master password');
             setPassword('');
             inputRef.current?.focus();
@@ -59,42 +67,95 @@ export function UnlockPage() {
     }
 
     async function handleBiometricUnlock() {
+        if (isBioLoading) return;
         setIsBioLoading(true);
         setError('');
         try {
-            // Attempt biometric authentication via Tauri plugin
             if (isTauri()) {
                 try {
                     const { authenticate } = await import('@tauri-apps/plugin-biometric');
-                    await authenticate('Unlock CryptoNote vault', {
+                    await authenticate('Unlock your CryptoNote vault', {
                         allowDeviceCredential: true,
                     });
                 } catch (bioErr: any) {
-                    // If biometric plugin is not available (e.g., Linux desktop),
-                    // fall through and use the stored password directly
-                    const errStr = bioErr?.toString() ?? '';
-                    if (errStr.includes('not available') || errStr.includes('not supported') || errStr.includes('plugin')) {
-                        // Platform doesn't support biometrics — skip auth challenge
-                    } else {
-                        throw bioErr; // Real auth failure
+                    const msg = bioErr?.toString() ?? '';
+                    // Only suppress "not available" errors (desktop dev mode)
+                    if (!msg.includes('not available') && !msg.includes('not supported')) {
+                        throw new Error('Biometric authentication failed. Try your master password.');
                     }
                 }
             }
 
-            const storedPw = getBiometricPassword();
-            if (!storedPw) {
-                setError('Biometric password not found. Please unlock with your master password first.');
-                return;
-            }
-
-            await doUnlock(storedPw);
+            const pw = getBiometricPassword();
+            if (!pw) throw new Error('Biometric credential lost. Please use master password.');
+            await doUnlock(pw);
         } catch (err: any) {
-            setError(err?.toString() ?? 'Biometric authentication failed');
+            setError(err?.message ?? err?.toString() ?? 'Authentication failed');
         } finally {
             setIsBioLoading(false);
         }
     }
 
+    // ── Biometric-first layout ────────────────────────────────────────────────
+    if (hasBiometric && !showPassword) {
+        return (
+            <div className='auth-layout'>
+                <div className='auth-card bio-card'>
+                    {/* Logo */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40 }}>
+                        <div style={{
+                            width: 88, height: 88, borderRadius: 22,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            marginBottom: 20,
+                            filter: 'drop-shadow(0 0 28px rgba(0,229,160,0.45))',
+                        }}>
+                            <img src={logoImg} alt='CryptoNote' style={{ width: 88, height: 88, borderRadius: 18 }} />
+                        </div>
+                        <h1 className='gradient-text' style={{ fontSize: '1.75rem' }}>CryptoNote</h1>
+                        <p className='text-muted text-sm' style={{ marginTop: 8 }}>Touch the sensor to unlock</p>
+                    </div>
+
+                    {/* Big fingerprint button */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+                        <button
+                            className='bio-pulse-btn'
+                            onClick={handleBiometricUnlock}
+                            disabled={isBioLoading}
+                            aria-label='Unlock with biometrics'
+                        >
+                            {isBioLoading
+                                ? <div className='bio-spinner' />
+                                : <Fingerprint size={52} />
+                            }
+                        </button>
+
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                            {isBioLoading ? 'Waiting for biometric…' : 'Tap to authenticate'}
+                        </p>
+
+                        {error && (
+                            <div className='bio-error'>
+                                <AlertTriangle size={14} />
+                                {error}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Fallback to password */}
+                    <button
+                        className='btn btn-ghost w-full'
+                        style={{ marginTop: 36, gap: 8, color: 'var(--text-muted)', fontSize: '0.85rem' }}
+                        onClick={() => { setShowPassword(true); setTimeout(() => inputRef.current?.focus(), 100); }}
+                    >
+                        <KeyRound size={15} />
+                        Use master password instead
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Password-first layout ─────────────────────────────────────────────────
     return (
         <div className='auth-layout'>
             <div className='auth-card'>
@@ -103,13 +164,13 @@ export function UnlockPage() {
                     <div style={{
                         width: 80, height: 80, borderRadius: 20,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        marginBottom: 16, 
-                        filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))'
+                        marginBottom: 16,
+                        filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))',
                     }}>
-                        <img src={logoImg} alt="CryptoNote" style={{ width: 80, height: 80, borderRadius: 16 }} />
+                        <img src={logoImg} alt='CryptoNote' style={{ width: 80, height: 80, borderRadius: 16 }} />
                     </div>
                     <h1 className='gradient-text' style={{ fontSize: '1.75rem' }}>CryptoNote</h1>
-                    <p className='text-muted text-sm' style={{ marginTop: 6 }}>Enter your master password to unlock</p>
+                    <p className='text-muted text-sm' style={{ marginTop: 6 }}>Enter your master password</p>
                 </div>
 
                 <form onSubmit={handleUnlock}>
@@ -146,7 +207,7 @@ export function UnlockPage() {
                             marginTop: 12, padding: '10px 14px',
                             background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--radius-md)',
                             border: '1px solid var(--border-danger)', color: 'var(--color-danger)',
-                            fontSize: '0.8125rem'
+                            fontSize: '0.8125rem',
                         }}>
                             <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
                             {error}
@@ -157,54 +218,33 @@ export function UnlockPage() {
                         type='submit'
                         className='btn btn-primary w-full'
                         style={{ marginTop: 24 }}
-                        disabled={!password || isLoading || isBioLoading}
+                        disabled={!password || isLoading}
                     >
-                        {isLoading ? (
-                            <>
-                                <div className='spin' style={{ width: 16, height: 16, border: '2px solid #080c10', borderTopColor: 'transparent', borderRadius: '50%' }} />
-                                Unlocking…
-                            </>
-                        ) : (
-                            <>
-                                <Lock size={16} />
-                                Unlock Vault
-                            </>
-                        )}
+                        {isLoading
+                            ? <><div className='spin' style={{ width: 16, height: 16, border: '2px solid #080c10', borderTopColor: 'transparent', borderRadius: '50%' }} />Unlocking…</>
+                            : <><Lock size={16} />Unlock Vault</>
+                        }
                     </button>
                 </form>
 
-                {/* Biometric unlock button */}
+                {/* Biometric shortcut if enrolled */}
                 {hasBiometric && (
                     <>
-                        <div style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            margin: '20px 0', color: 'var(--text-muted)', fontSize: '0.75rem',
-                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                             <span>or</span>
                             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                         </div>
                         <button
                             className='btn btn-secondary w-full'
-                            style={{
-                                gap: 10, padding: '12px 16px',
-                                background: 'rgba(0,229,160,0.08)',
-                                border: '1px solid rgba(0,229,160,0.25)',
-                            }}
+                            style={{ gap: 10, background: 'rgba(0,229,160,0.08)', border: '1px solid rgba(0,229,160,0.25)' }}
                             onClick={handleBiometricUnlock}
-                            disabled={isLoading || isBioLoading}
+                            disabled={isBioLoading}
                         >
-                            {isBioLoading ? (
-                                <>
-                                    <div className='spin' style={{ width: 16, height: 16, border: '2px solid var(--accent-1)', borderTopColor: 'transparent', borderRadius: '50%' }} />
-                                    Authenticating…
-                                </>
-                            ) : (
-                                <>
-                                    <Fingerprint size={18} style={{ color: 'var(--accent-1)' }} />
-                                    Unlock with Biometrics
-                                </>
-                            )}
+                            {isBioLoading
+                                ? <><div className='spin' style={{ width: 16, height: 16, border: '2px solid var(--accent-1)', borderTopColor: 'transparent', borderRadius: '50%' }} />Authenticating…</>
+                                : <><Fingerprint size={18} style={{ color: 'var(--accent-1)' }} />Use Biometrics</>
+                            }
                         </button>
                     </>
                 )}
@@ -213,11 +253,7 @@ export function UnlockPage() {
 
                 <div style={{ textAlign: 'center' }}>
                     <p className='text-sm text-muted' style={{ marginBottom: 10 }}>First time? Set up a new vault.</p>
-                    <button
-                        className='btn btn-secondary w-full'
-                        onClick={() => navigate('/setup')}
-                        disabled={isLoading}
-                    >
+                    <button className='btn btn-secondary w-full' onClick={() => navigate('/setup')} disabled={isLoading}>
                         Create New Vault
                     </button>
                 </div>
@@ -225,4 +261,3 @@ export function UnlockPage() {
         </div>
     );
 }
-
