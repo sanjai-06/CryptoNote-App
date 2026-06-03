@@ -1,11 +1,11 @@
 // src-ui/src/pages/Settings.tsx
 // Auto-lock, sync, security, and device management settings
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, Clock, Cloud, Smartphone, Lock,
-    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette, Fingerprint
+    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette, Fingerprint, Eye, EyeOff
 } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
@@ -35,7 +35,9 @@ export function SettingsPage() {
         syncEnabled, setSyncEnabled, setLocked,
         syncServerUrl, syncEmail, setSyncConfig,
         theme, setTheme,
-        biometricEnabled, setBiometricEnabled } = useVaultStore();
+        biometricEnabled, setBiometricEnabled,
+        storeBiometricPassword, getBiometricPassword,
+    } = useVaultStore();
 
     const [serverUrl, setServerUrl] = useState(syncServerUrl);
     const [email, setEmail] = useState(syncEmail);
@@ -45,6 +47,14 @@ export function SettingsPage() {
     const [showPwGen, setShowPwGen] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
     const [syncError, setSyncError] = useState('');
+
+    // Biometric enrollment modal
+    const [showBioEnroll, setShowBioEnroll]   = useState(false);
+    const [bioEnrollPw, setBioEnrollPw]       = useState('');
+    const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
+    const [bioEnrollError, setBioEnrollError] = useState('');
+    const bioEnrollRef = useRef<HTMLInputElement>(null);
+    const isEnrolled = getBiometricPassword() !== null;
 
     // Re-apply saved sync config to Tauri engine on mount
     useEffect(() => {
@@ -255,21 +265,87 @@ export function SettingsPage() {
                                 <div className='settings-row-desc'>Use fingerprint or Face ID to unlock your vault</div>
                             </div>
                             <label className='toggle'>
-                                <input type='checkbox' checked={biometricEnabled} onChange={(e) => setBiometricEnabled(e.target.checked)} />
+                                <input type='checkbox' checked={biometricEnabled} onChange={(e) => {
+                                    if (e.target.checked) {
+                                        // Enable: show enrollment modal to capture password now
+                                        setBiometricEnabled(true);
+                                        setShowBioEnroll(true);
+                                        setBioEnrollPw('');
+                                        setBioEnrollError('');
+                                        setTimeout(() => bioEnrollRef.current?.focus(), 100);
+                                    } else {
+                                        // Disable: clear stored credential
+                                        setBiometricEnabled(false);
+                                        flash('Biometric unlock disabled');
+                                    }
+                                }} />
                                 <span className='toggle-slider' />
                             </label>
                         </div>
                         {biometricEnabled && (
                             <div style={{
                                 padding: '10px 14px', marginTop: 4,
-                                background: 'rgba(0,229,160,0.08)',
+                                background: isEnrolled ? 'rgba(0,229,160,0.08)' : 'rgba(255,170,0,0.08)',
                                 borderRadius: 'var(--radius-md)',
-                                border: '1px solid rgba(0,229,160,0.2)',
+                                border: `1px solid ${isEnrolled ? 'rgba(0,229,160,0.2)' : 'rgba(255,170,0,0.3)'}`,
                                 fontSize: '0.8rem', color: 'var(--text-secondary)',
                             }}>
                                 <Fingerprint size={13} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-                                After your next master password unlock, biometric unlock will be available.
-                                Your password is stored securely on this device.
+                                {isEnrolled
+                                    ? '✓ Biometric unlock is active on this device.'
+                                    : '⚠ Enter your master password below to complete enrollment.'}
+                            </div>
+                        )}
+
+                        {/* Biometric enrollment modal */}
+                        {showBioEnroll && (
+                            <div style={{
+                                marginTop: 12, padding: 16,
+                                background: 'var(--bg-surface)',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid var(--border)',
+                            }}>
+                                <p style={{ fontSize: '0.875rem', marginBottom: 10 }}>
+                                    Enter your master password to enroll biometrics:
+                                </p>
+                                <div style={{ position: 'relative', marginBottom: 10 }}>
+                                    <input
+                                        ref={bioEnrollRef}
+                                        type={showBioEnrollPw ? 'text' : 'password'}
+                                        className={`form-input font-mono ${bioEnrollError ? 'error' : ''}`}
+                                        placeholder='Master password…'
+                                        value={bioEnrollPw}
+                                        onChange={(e) => { setBioEnrollPw(e.target.value); setBioEnrollError(''); }}
+                                        onKeyDown={(e) => e.key === 'Enter' && bioEnrollPw && (() => {
+                                            storeBiometricPassword(bioEnrollPw);
+                                            setShowBioEnroll(false);
+                                            flash('Biometric unlock enrolled ✓');
+                                        })()}
+                                    />
+                                    <button type='button' className='btn btn-ghost btn-icon'
+                                        style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
+                                        onClick={() => setShowBioEnrollPw(v => !v)}>
+                                        {showBioEnrollPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                                    </button>
+                                </div>
+                                {bioEnrollError && (
+                                    <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 8 }}>{bioEnrollError}</p>
+                                )}
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button className='btn btn-primary' style={{ flex: 1 }}
+                                        disabled={!bioEnrollPw}
+                                        onClick={() => {
+                                            storeBiometricPassword(bioEnrollPw);
+                                            setShowBioEnroll(false);
+                                            flash('Biometric unlock enrolled ✓');
+                                        }}>
+                                        <Fingerprint size={15} /> Enroll
+                                    </button>
+                                    <button className='btn btn-secondary' onClick={() => {
+                                        setBiometricEnabled(false);
+                                        setShowBioEnroll(false);
+                                    }}>Cancel</button>
+                                </div>
                             </div>
                         )}
                     </div>

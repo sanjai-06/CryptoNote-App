@@ -3,17 +3,19 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Eye, EyeOff, AlertTriangle, Fingerprint, KeyRound } from 'lucide-react';
+import { Lock, Eye, EyeOff, AlertTriangle, Fingerprint, KeyRound, Cloud, RefreshCw } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
-import { vaultUnlock } from '../hooks/useVault';
+import { vaultUnlock, vaultIsInitialized, syncConfigure, syncPull } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import { isTauri } from '../lib/env';
+
 
 export function UnlockPage() {
     const navigate = useNavigate();
     const {
         setLocked, setMeta,
         biometricEnabled, storeBiometricPassword, getBiometricPassword,
+        syncServerUrl, syncEmail,
     } = useVaultStore();
 
     const [password, setPassword]         = useState('');
@@ -22,22 +24,63 @@ export function UnlockPage() {
     const [isBioLoading, setIsBioLoading] = useState(false);
     const [error, setError]               = useState('');
     const [failCount, setFailCount]       = useState(0);
-    const [showPassword, setShowPassword] = useState(false); // show pw form when bio available
+    const [showPassword, setShowPassword] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const storedPw    = getBiometricPassword();
+    // Cloud sync restore state (shown when no local vault exists)
+    const [noVault, setNoVault]           = useState(false);
+    const [showSyncRestore, setShowSyncRestore] = useState(false);
+    const [restoreUrl, setRestoreUrl]     = useState(syncServerUrl || 'https://sanjai-06-cryptonote-app.onrender.com');
+    const [restoreEmail, setRestoreEmail] = useState(syncEmail || '');
+    const [isPulling, setIsPulling]       = useState(false);
+    const [pullError, setPullError]       = useState('');
+    const [pullDone, setPullDone]         = useState(false);
+
+    const storedPw     = getBiometricPassword();
     const hasBiometric = biometricEnabled && storedPw !== null;
 
-    // Auto-trigger biometric on load if enrolled
+    // Check if local vault exists; if not, offer cloud restore
     useEffect(() => {
-        if (hasBiometric) {
-            // Small delay so the UI renders first
+        vaultIsInitialized().then((exists) => {
+            if (!exists) setNoVault(true);
+        }).catch(() => {});
+    }, []);
+
+    // Auto-trigger biometric on load if enrolled and vault exists
+    useEffect(() => {
+        if (hasBiometric && !noVault) {
             setTimeout(() => handleBiometricUnlock(), 600);
-        } else {
+        } else if (!hasBiometric) {
             inputRef.current?.focus();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [noVault]);
+
+    async function handleSyncRestore() {
+        if (!restoreEmail.trim() || !restoreUrl.trim()) {
+            setPullError('Please enter server URL and account email.');
+            return;
+        }
+        setIsPulling(true);
+        setPullError('');
+        try {
+            await syncConfigure({
+                server_url: restoreUrl.trim(),
+                device_id: `device-${restoreEmail.trim().replace(/[^a-z0-9]/gi, '')}`,
+                user_id: restoreEmail.trim(),
+            });
+            await syncPull();
+            setPullDone(true);
+            setNoVault(false);
+            setShowSyncRestore(false);
+            setError('Vault restored from cloud! Enter your master password to unlock.');
+        } catch (e: any) {
+            setPullError(e?.toString() ?? 'Failed to restore from sync. Check your server URL and account email.');
+        } finally {
+            setIsPulling(false);
+        }
+    }
+
 
     async function doUnlock(pw: string) {
         const meta = await vaultUnlock(pw);
@@ -251,8 +294,81 @@ export function UnlockPage() {
 
                 <div className='divider' style={{ margin: '24px 0' }} />
 
+                {/* No vault banner + cloud restore */}
+                {noVault && (
+                    <div style={{
+                        padding: '12px 14px', marginBottom: 12,
+                        background: 'rgba(255,170,0,0.08)',
+                        border: '1px solid rgba(255,170,0,0.3)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.8rem', color: 'var(--color-warning)',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                        <Cloud size={14} />
+                        No vault found on this device. Restore from cloud sync or create a new vault.
+                    </div>
+                )}
+
+                {showSyncRestore && (
+                    <div style={{
+                        padding: 16, marginBottom: 12,
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-lg)',
+                    }}>
+                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12 }}>
+                            <Cloud size={14} style={{ display: 'inline', marginRight: 6 }} />
+                            Restore from Cloud Sync
+                        </p>
+                        <div className='form-group'>
+                            <label className='form-label'>Sync Server URL</label>
+                            <input className='form-input' value={restoreUrl}
+                                onChange={(e) => setRestoreUrl(e.target.value)}
+                                placeholder='https://your-server.onrender.com' />
+                        </div>
+                        <div className='form-group' style={{ marginTop: 8 }}>
+                            <label className='form-label'>Account Email</label>
+                            <input className='form-input' type='email' value={restoreEmail}
+                                onChange={(e) => setRestoreEmail(e.target.value)}
+                                placeholder='your@email.com' />
+                        </div>
+                        {pullError && (
+                            <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>
+                                <AlertTriangle size={13} style={{ display: 'inline', marginRight: 4 }} />
+                                {pullError}
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            <button className='btn btn-primary' style={{ flex: 1 }}
+                                disabled={isPulling || !restoreEmail || !restoreUrl}
+                                onClick={handleSyncRestore}>
+                                {isPulling
+                                    ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />Restoring…</>
+                                    : <><Cloud size={14} />Restore Vault</>
+                                }
+                            </button>
+                            <button className='btn btn-secondary' onClick={() => setShowSyncRestore(false)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <div style={{ textAlign: 'center' }}>
-                    <p className='text-sm text-muted' style={{ marginBottom: 10 }}>First time? Set up a new vault.</p>
+                    {!showSyncRestore && (
+                        <button
+                            className='btn btn-secondary w-full'
+                            style={{ marginBottom: 8, gap: 8 }}
+                            onClick={() => setShowSyncRestore(true)}
+                            disabled={isLoading}
+                        >
+                            <Cloud size={15} />
+                            Restore from Cloud Sync
+                        </button>
+                    )}
+                    <p className='text-sm text-muted' style={{ marginBottom: 10, marginTop: 4 }}>
+                        No account? Create a fresh vault.
+                    </p>
                     <button className='btn btn-secondary w-full' onClick={() => navigate('/setup')} disabled={isLoading}>
                         Create New Vault
                     </button>
