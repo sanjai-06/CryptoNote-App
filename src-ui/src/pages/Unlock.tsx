@@ -3,19 +3,18 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Eye, EyeOff, AlertTriangle, Fingerprint, KeyRound, Cloud, RefreshCw } from 'lucide-react';
+import { Lock, Eye, EyeOff, AlertTriangle, Fingerprint, KeyRound, Cloud, CheckCircle2 } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
-import { vaultUnlock, vaultIsInitialized, syncConfigure, syncPull } from '../hooks/useVault';
+import { vaultUnlock, vaultIsInitialized, syncConfigure } from '../hooks/useVault';
 import { useVaultStore } from '../store/vaultStore';
 import { isTauri } from '../lib/env';
-
 
 export function UnlockPage() {
     const navigate = useNavigate();
     const {
         setLocked, setMeta,
         biometricEnabled, storeBiometricPassword, getBiometricPassword,
-        syncServerUrl, syncEmail,
+        syncServerUrl, syncEmail, setSyncConfig,
     } = useVaultStore();
 
     const [password, setPassword]         = useState('');
@@ -24,66 +23,66 @@ export function UnlockPage() {
     const [isBioLoading, setIsBioLoading] = useState(false);
     const [error, setError]               = useState('');
     const [failCount, setFailCount]       = useState(0);
-    const [showPassword, setShowPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(false); // switch from bio view to pw view
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Cloud sync restore state (shown when no local vault exists)
+    // No-vault + sync restore state
     const [noVault, setNoVault]           = useState(false);
-    const [showSyncRestore, setShowSyncRestore] = useState(false);
+    const [showSyncPanel, setShowSyncPanel] = useState(false);
     const [restoreUrl, setRestoreUrl]     = useState(syncServerUrl || 'https://sanjai-06-cryptonote-app.onrender.com');
     const [restoreEmail, setRestoreEmail] = useState(syncEmail || '');
-    const [isPulling, setIsPulling]       = useState(false);
-    const [pullError, setPullError]       = useState('');
-    const [pullDone, setPullDone]         = useState(false);
+    const [isSavingSync, setIsSavingSync] = useState(false);
+    const [syncSaved, setSyncSaved]       = useState(false);
+    const [syncPanelError, setSyncPanelError] = useState('');
 
     const storedPw     = getBiometricPassword();
     const hasBiometric = biometricEnabled && storedPw !== null;
 
-    // Check if local vault exists; if not, offer cloud restore
+    // Detect missing vault on mount
     useEffect(() => {
-        vaultIsInitialized().then((exists) => {
-            if (!exists) setNoVault(true);
+        vaultIsInitialized().then((ok) => {
+            if (!ok) setNoVault(true);
         }).catch(() => {});
     }, []);
 
-    // Auto-trigger biometric on load if enrolled and vault exists
+    // Auto-trigger biometric (only when vault exists)
     useEffect(() => {
         if (hasBiometric && !noVault) {
             setTimeout(() => handleBiometricUnlock(), 600);
-        } else if (!hasBiometric) {
+        } else if (!hasBiometric && !noVault) {
             inputRef.current?.focus();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [noVault]);
 
-    async function handleSyncRestore() {
+    // ── Save sync credentials so unlock can pull automatically ────────────────
+    async function handleSaveSyncCredentials() {
         if (!restoreEmail.trim() || !restoreUrl.trim()) {
-            setPullError('Please enter server URL and account email.');
+            setSyncPanelError('Enter both server URL and account email.');
             return;
         }
-        setIsPulling(true);
-        setPullError('');
+        setIsSavingSync(true);
+        setSyncPanelError('');
         try {
             await syncConfigure({
                 server_url: restoreUrl.trim(),
                 device_id: `device-${restoreEmail.trim().replace(/[^a-z0-9]/gi, '')}`,
                 user_id: restoreEmail.trim(),
             });
-            await syncPull();
-            setPullDone(true);
-            setNoVault(false);
-            setShowSyncRestore(false);
-            setError('Vault restored from cloud! Enter your master password to unlock.');
+            setSyncConfig(restoreUrl.trim(), restoreEmail.trim(), true);
+            setSyncSaved(true);
+            setShowSyncPanel(false);
+            setError('✓ Sync configured! Now enter your master password — your vault will be restored automatically.');
         } catch (e: any) {
-            setPullError(e?.toString() ?? 'Failed to restore from sync. Check your server URL and account email.');
+            setSyncPanelError(e?.toString() ?? 'Failed to configure sync.');
         } finally {
-            setIsPulling(false);
+            setIsSavingSync(false);
         }
     }
 
-
+    // ── Core unlock ───────────────────────────────────────────────────────────
     async function doUnlock(pw: string) {
-        const meta = await vaultUnlock(pw);
+        const meta = await vaultUnlock(pw); // vaultUnlock calls sync_pull internally
         setMeta(meta);
         setLocked(false);
         if (biometricEnabled) storeBiometricPassword(pw);
@@ -117,20 +116,16 @@ export function UnlockPage() {
             if (isTauri()) {
                 try {
                     const { authenticate } = await import('@tauri-apps/plugin-biometric');
-                    await authenticate('Unlock your CryptoNote vault', {
-                        allowDeviceCredential: true,
-                    });
+                    await authenticate('Unlock your CryptoNote vault', { allowDeviceCredential: true });
                 } catch (bioErr: any) {
                     const msg = bioErr?.toString() ?? '';
-                    // Only suppress "not available" errors (desktop dev mode)
                     if (!msg.includes('not available') && !msg.includes('not supported')) {
-                        throw new Error('Biometric authentication failed. Try your master password.');
+                        throw new Error('Biometric failed. Try your master password.');
                     }
                 }
             }
-
             const pw = getBiometricPassword();
-            if (!pw) throw new Error('Biometric credential lost. Please use master password.');
+            if (!pw) throw new Error('Biometric credential lost. Use master password.');
             await doUnlock(pw);
         } catch (err: any) {
             setError(err?.message ?? err?.toString() ?? 'Authentication failed');
@@ -139,52 +134,29 @@ export function UnlockPage() {
         }
     }
 
-    // ── Biometric-first layout ────────────────────────────────────────────────
-    if (hasBiometric && !showPassword) {
+    // ── Biometric-first screen ────────────────────────────────────────────────
+    if (hasBiometric && !showPassword && !noVault) {
         return (
             <div className='auth-layout'>
                 <div className='auth-card bio-card'>
-                    {/* Logo */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40 }}>
-                        <div style={{
-                            width: 88, height: 88, borderRadius: 22,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            marginBottom: 20,
-                            filter: 'drop-shadow(0 0 28px rgba(0,229,160,0.45))',
-                        }}>
+                        <div style={{ width: 88, height: 88, borderRadius: 22, marginBottom: 20, filter: 'drop-shadow(0 0 28px rgba(0,229,160,0.45))' }}>
                             <img src={logoImg} alt='CryptoNote' style={{ width: 88, height: 88, borderRadius: 18 }} />
                         </div>
                         <h1 className='gradient-text' style={{ fontSize: '1.75rem' }}>CryptoNote</h1>
                         <p className='text-muted text-sm' style={{ marginTop: 8 }}>Touch the sensor to unlock</p>
                     </div>
 
-                    {/* Big fingerprint button */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                        <button
-                            className='bio-pulse-btn'
-                            onClick={handleBiometricUnlock}
-                            disabled={isBioLoading}
-                            aria-label='Unlock with biometrics'
-                        >
-                            {isBioLoading
-                                ? <div className='bio-spinner' />
-                                : <Fingerprint size={52} />
-                            }
+                        <button className='bio-pulse-btn' onClick={handleBiometricUnlock} disabled={isBioLoading} aria-label='Unlock with biometrics'>
+                            {isBioLoading ? <div className='bio-spinner' /> : <Fingerprint size={52} />}
                         </button>
-
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
                             {isBioLoading ? 'Waiting for biometric…' : 'Tap to authenticate'}
                         </p>
-
-                        {error && (
-                            <div className='bio-error'>
-                                <AlertTriangle size={14} />
-                                {error}
-                            </div>
-                        )}
+                        {error && <div className='bio-error'><AlertTriangle size={14} />{error}</div>}
                     </div>
 
-                    {/* Fallback to password */}
                     <button
                         className='btn btn-ghost w-full'
                         style={{ marginTop: 36, gap: 8, color: 'var(--text-muted)', fontSize: '0.85rem' }}
@@ -198,48 +170,67 @@ export function UnlockPage() {
         );
     }
 
-    // ── Password-first layout ─────────────────────────────────────────────────
+    // ── Password screen ───────────────────────────────────────────────────────
     return (
         <div className='auth-layout'>
             <div className='auth-card'>
                 {/* Logo */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 36 }}>
-                    <div style={{
-                        width: 80, height: 80, borderRadius: 20,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        marginBottom: 16,
-                        filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))',
-                    }}>
+                    <div style={{ width: 80, height: 80, borderRadius: 20, marginBottom: 16, filter: 'drop-shadow(0 0 24px rgba(0,229,160,0.4))' }}>
                         <img src={logoImg} alt='CryptoNote' style={{ width: 80, height: 80, borderRadius: 16 }} />
                     </div>
                     <h1 className='gradient-text' style={{ fontSize: '1.75rem' }}>CryptoNote</h1>
                     <p className='text-muted text-sm' style={{ marginTop: 6 }}>Enter your master password</p>
                 </div>
 
+                {/* No-vault banner */}
+                {noVault && !syncSaved && (
+                    <div style={{
+                        padding: '10px 14px', marginBottom: 16,
+                        background: 'rgba(255,170,0,0.08)',
+                        border: '1px solid rgba(255,170,0,0.3)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.8rem', color: 'var(--color-warning)',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                        <Cloud size={14} style={{ flexShrink: 0 }} />
+                        No vault on this device. Configure sync below to restore, or create a new vault.
+                    </div>
+                )}
+
                 <form onSubmit={handleUnlock}>
                     <div className='form-group'>
                         <label className='form-label' htmlFor='master-pw'>Master Password</label>
-                        <div style={{ position: 'relative' }}>
+                        {/* Flex row so eye button never clips on mobile */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
                             <input
                                 id='master-pw'
                                 ref={inputRef}
                                 type={showPw ? 'text' : 'password'}
-                                className={`form-input font-mono ${error ? 'error' : ''}`}
+                                className={`form-input font-mono ${error && !error.startsWith('✓') ? 'error' : ''}`}
                                 placeholder='Enter master password…'
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 autoComplete='current-password'
                                 disabled={isLoading || isBioLoading}
-                                style={{ paddingRight: 44 }}
+                                style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
                             />
                             <button
                                 type='button'
-                                className='btn btn-ghost btn-icon'
-                                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
                                 onClick={() => setShowPw(!showPw)}
                                 tabIndex={-1}
+                                style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 44, height: 44, flexShrink: 0,
+                                    background: 'var(--bg-input)',
+                                    border: '1px solid var(--border)',
+                                    borderLeft: 'none',
+                                    borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-muted)',
+                                }}
                             >
-                                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                                {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
                             </button>
                         </div>
                     </div>
@@ -247,12 +238,17 @@ export function UnlockPage() {
                     {error && (
                         <div style={{
                             display: 'flex', alignItems: 'flex-start', gap: 8,
-                            marginTop: 12, padding: '10px 14px',
-                            background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--border-danger)', color: 'var(--color-danger)',
+                            marginTop: 10, padding: '10px 14px',
+                            background: error.startsWith('✓') ? 'rgba(0,229,160,0.08)' : 'rgba(239,68,68,0.1)',
+                            borderRadius: 'var(--radius-md)',
+                            border: `1px solid ${error.startsWith('✓') ? 'rgba(0,229,160,0.25)' : 'var(--border-danger)'}`,
+                            color: error.startsWith('✓') ? 'var(--accent-1)' : 'var(--color-danger)',
                             fontSize: '0.8125rem',
                         }}>
-                            <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
+                            {error.startsWith('✓')
+                                ? <CheckCircle2 size={15} style={{ marginTop: 1, flexShrink: 0 }} />
+                                : <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
+                            }
                             {error}
                         </div>
                     )}
@@ -260,7 +256,7 @@ export function UnlockPage() {
                     <button
                         type='submit'
                         className='btn btn-primary w-full'
-                        style={{ marginTop: 24 }}
+                        style={{ marginTop: 20 }}
                         disabled={!password || isLoading}
                     >
                         {isLoading
@@ -270,10 +266,10 @@ export function UnlockPage() {
                     </button>
                 </form>
 
-                {/* Biometric shortcut if enrolled */}
+                {/* Biometric shortcut */}
                 {hasBiometric && (
                     <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                             <span>or</span>
                             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
@@ -292,36 +288,24 @@ export function UnlockPage() {
                     </>
                 )}
 
-                <div className='divider' style={{ margin: '24px 0' }} />
+                <div className='divider' style={{ margin: '20px 0' }} />
 
-                {/* No vault banner + cloud restore */}
-                {noVault && (
-                    <div style={{
-                        padding: '12px 14px', marginBottom: 12,
-                        background: 'rgba(255,170,0,0.08)',
-                        border: '1px solid rgba(255,170,0,0.3)',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '0.8rem', color: 'var(--color-warning)',
-                        display: 'flex', alignItems: 'center', gap: 8,
-                    }}>
-                        <Cloud size={14} />
-                        No vault found on this device. Restore from cloud sync or create a new vault.
-                    </div>
-                )}
-
-                {showSyncRestore && (
+                {/* Sync restore panel (collapsed by default) */}
+                {showSyncPanel ? (
                     <div style={{
                         padding: 16, marginBottom: 12,
                         background: 'var(--bg-surface)',
                         border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-lg)',
                     }}>
-                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12 }}>
-                            <Cloud size={14} style={{ display: 'inline', marginRight: 6 }} />
-                            Restore from Cloud Sync
+                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Cloud size={14} /> Configure Cloud Sync
+                        </p>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                            Enter your sync details. After saving, unlock with your master password — your vault will be downloaded automatically.
                         </p>
                         <div className='form-group'>
-                            <label className='form-label'>Sync Server URL</label>
+                            <label className='form-label'>Server URL</label>
                             <input className='form-input' value={restoreUrl}
                                 onChange={(e) => setRestoreUrl(e.target.value)}
                                 placeholder='https://your-server.onrender.com' />
@@ -332,47 +316,41 @@ export function UnlockPage() {
                                 onChange={(e) => setRestoreEmail(e.target.value)}
                                 placeholder='your@email.com' />
                         </div>
-                        {pullError && (
-                            <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>
+                        {syncPanelError && (
+                            <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>
                                 <AlertTriangle size={13} style={{ display: 'inline', marginRight: 4 }} />
-                                {pullError}
-                            </div>
+                                {syncPanelError}
+                            </p>
                         )}
                         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className='btn btn-primary' style={{ flex: 1 }}
-                                disabled={isPulling || !restoreEmail || !restoreUrl}
-                                onClick={handleSyncRestore}>
-                                {isPulling
-                                    ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />Restoring…</>
-                                    : <><Cloud size={14} />Restore Vault</>
+                                disabled={isSavingSync || !restoreEmail || !restoreUrl}
+                                onClick={handleSaveSyncCredentials}>
+                                {isSavingSync
+                                    ? 'Saving…'
+                                    : <><Cloud size={14} /> Save & Unlock</>
                                 }
                             </button>
-                            <button className='btn btn-secondary' onClick={() => setShowSyncRestore(false)}>
-                                Cancel
-                            </button>
+                            <button className='btn btn-secondary' onClick={() => setShowSyncPanel(false)}>Cancel</button>
                         </div>
                     </div>
-                )}
-
-                <div style={{ textAlign: 'center' }}>
-                    {!showSyncRestore && (
+                ) : (
+                    <div style={{ textAlign: 'center' }}>
                         <button
                             className='btn btn-secondary w-full'
-                            style={{ marginBottom: 8, gap: 8 }}
-                            onClick={() => setShowSyncRestore(true)}
+                            style={{ marginBottom: 10, gap: 8 }}
+                            onClick={() => setShowSyncPanel(true)}
                             disabled={isLoading}
                         >
                             <Cloud size={15} />
-                            Restore from Cloud Sync
+                            {syncSaved ? '✓ Sync Configured — Change Settings' : 'Restore from Cloud Sync'}
                         </button>
-                    )}
-                    <p className='text-sm text-muted' style={{ marginBottom: 10, marginTop: 4 }}>
-                        No account? Create a fresh vault.
-                    </p>
-                    <button className='btn btn-secondary w-full' onClick={() => navigate('/setup')} disabled={isLoading}>
-                        Create New Vault
-                    </button>
-                </div>
+                        <p className='text-sm text-muted' style={{ marginBottom: 8 }}>New here? Create a fresh vault.</p>
+                        <button className='btn btn-secondary w-full' onClick={() => navigate('/setup')} disabled={isLoading}>
+                            Create New Vault
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

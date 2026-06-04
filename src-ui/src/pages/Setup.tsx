@@ -95,7 +95,7 @@ export function SetupPage() {
 
                 <div className='form-group'>
                     <label className='form-label' htmlFor='new-pw'>Master Password</label>
-                    <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
                         <input
                             id='new-pw'
                             type={showPw ? 'text' : 'password'}
@@ -103,12 +103,20 @@ export function SetupPage() {
                             placeholder='Choose a strong master password…'
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            style={{ paddingRight: 44 }}
+                            style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
                         />
-                        <button type='button' className='btn btn-ghost btn-icon'
-                            style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
-                            onClick={() => setShowPw(!showPw)} tabIndex={-1}>
-                            {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                        <button type='button' tabIndex={-1}
+                            onClick={() => setShowPw(!showPw)}
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                width: 44, height: 44, flexShrink: 0,
+                                background: 'var(--bg-input)',
+                                border: '1px solid var(--border)',
+                                borderLeft: 'none',
+                                borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                                cursor: 'pointer', color: 'var(--text-muted)',
+                            }}>
+                            {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
                         </button>
                     </div>
                 </div>
