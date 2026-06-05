@@ -98,13 +98,25 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11076708
+          packages: 'ndk;27.0.12077973'
 
-      - name: Install Android NDK
+      - name: Set NDK_HOME env
         run: |
-          sdkmanager --install "ndk;27.0.12077973"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+          # Try exact version first, fall back to latest NDK on the runner
+          if [ -d "$ANDROID_HOME/ndk/27.0.12077973" ]; then
+            echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+          elif [ -n "$ANDROID_NDK_LATEST_HOME" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
+            echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+          else
+            # Last resort: find any installed NDK
+            NDK=$(ls -d $ANDROID_HOME/ndk/* 2>/dev/null | sort -V | tail -1)
+            echo "NDK_HOME=$NDK" >> $GITHUB_ENV
+          fi
+          echo "Using NDK: $NDK_HOME"
 
       - name: Install Linux dependencies
         run: |
