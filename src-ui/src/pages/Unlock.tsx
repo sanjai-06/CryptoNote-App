@@ -9,6 +9,11 @@ import { vaultUnlock, vaultIsInitialized, syncConfigure } from '../hooks/useVaul
 import { useVaultStore } from '../store/vaultStore';
 import { isTauri } from '../lib/env';
 
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<T>(cmd, args);
+}
+
 export function UnlockPage() {
     const navigate = useNavigate();
     const {
@@ -31,6 +36,8 @@ export function UnlockPage() {
     const [showSyncPanel, setShowSyncPanel] = useState(false);
     const [restoreUrl, setRestoreUrl]     = useState(syncServerUrl || 'https://sanjai-06-cryptonote-app.onrender.com');
     const [restoreEmail, setRestoreEmail] = useState(syncEmail || '');
+    const [restorePassword, setRestorePassword] = useState('');
+    const [showRestorePw, setShowRestorePw] = useState(false);
     const [isSavingSync, setIsSavingSync] = useState(false);
     const [syncSaved, setSyncSaved]       = useState(false);
     const [syncPanelError, setSyncPanelError] = useState('');
@@ -55,26 +62,33 @@ export function UnlockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [noVault]);
 
-    // ── Save sync credentials so unlock can pull automatically ────────────────
-    async function handleSaveSyncCredentials() {
-        if (!restoreEmail.trim() || !restoreUrl.trim()) {
-            setSyncPanelError('Enter both server URL and account email.');
+    // ── Restore from sync (new device bootstrap) ──────────────────────────────
+    async function handleSyncRestore() {
+        if (!restoreEmail.trim() || !restoreUrl.trim() || !restorePassword.trim()) {
+            setSyncPanelError('Enter server URL, account email, and master password.');
             return;
         }
         setIsSavingSync(true);
         setSyncPanelError('');
         try {
+            // Configure the sync engine so it knows the server URL + user
             await syncConfigure({
                 server_url: restoreUrl.trim(),
                 device_id: `device-${restoreEmail.trim().replace(/[^a-z0-9]/gi, '')}`,
                 user_id: restoreEmail.trim(),
             });
+            // Restore vault from server using master password (derives keys from server's kdf_salt)
+            const meta = await tauriInvoke<{ vault_id: string; salt: string; created_at: number; version: number; sync_version: number }>(
+                'vault_restore_from_sync',
+                { masterPassword: restorePassword.trim(), userId: restoreEmail.trim() }
+            );
             setSyncConfig(restoreUrl.trim(), restoreEmail.trim(), true);
-            setSyncSaved(true);
-            setShowSyncPanel(false);
-            setError('✓ Sync configured! Now enter your master password — your vault will be restored automatically.');
+            setMeta(meta);
+            setLocked(false);
+            if (biometricEnabled) storeBiometricPassword(restorePassword.trim());
+            navigate('/vault');
         } catch (e: any) {
-            setSyncPanelError(e?.toString() ?? 'Failed to configure sync.');
+            setSyncPanelError(e?.toString() ?? 'Restore failed. Check your server URL, email, and master password.');
         } finally {
             setIsSavingSync(false);
         }
@@ -298,11 +312,11 @@ export function UnlockPage() {
                         border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-lg)',
                     }}>
-                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Cloud size={14} /> Configure Cloud Sync
+                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Cloud size={14} /> Restore from Cloud Sync
                         </p>
                         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                            Enter your sync details. After saving, unlock with your master password — your vault will be downloaded automatically.
+                            Enter your sync details and master password. Your vault will be downloaded and decrypted in one step.
                         </p>
                         <div className='form-group'>
                             <label className='form-label'>Server URL</label>
@@ -316,19 +330,43 @@ export function UnlockPage() {
                                 onChange={(e) => setRestoreEmail(e.target.value)}
                                 placeholder='your@email.com' />
                         </div>
+                        <div className='form-group' style={{ marginTop: 8 }}>
+                            <label className='form-label'>Master Password</label>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <input
+                                    className='form-input font-mono'
+                                    type={showRestorePw ? 'text' : 'password'}
+                                    value={restorePassword}
+                                    onChange={(e) => setRestorePassword(e.target.value)}
+                                    placeholder='Your master password…'
+                                    style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
+                                />
+                                <button type='button' tabIndex={-1}
+                                    onClick={() => setShowRestorePw(v => !v)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        width: 44, height: 44, flexShrink: 0,
+                                        background: 'var(--bg-input)', border: '1px solid var(--border)',
+                                        borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                                        cursor: 'pointer', color: 'var(--text-muted)',
+                                    }}>
+                                    {showRestorePw ? <EyeOff size={17} /> : <Eye size={17} />}
+                                </button>
+                            </div>
+                        </div>
                         {syncPanelError && (
-                            <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>
+                            <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>
                                 <AlertTriangle size={13} style={{ display: 'inline', marginRight: 4 }} />
                                 {syncPanelError}
-                            </p>
+                            </div>
                         )}
                         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className='btn btn-primary' style={{ flex: 1 }}
-                                disabled={isSavingSync || !restoreEmail || !restoreUrl}
-                                onClick={handleSaveSyncCredentials}>
+                                disabled={isSavingSync || !restoreEmail || !restoreUrl || !restorePassword}
+                                onClick={handleSyncRestore}>
                                 {isSavingSync
-                                    ? 'Saving…'
-                                    : <><Cloud size={14} /> Save & Unlock</>
+                                    ? 'Restoring…'
+                                    : <><Cloud size={14} /> Restore Vault</>
                                 }
                             </button>
                             <button className='btn btn-secondary' onClick={() => setShowSyncPanel(false)}>Cancel</button>

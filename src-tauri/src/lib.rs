@@ -198,6 +198,7 @@ pub fn run() {
             sync_register,
             sync_push,
             sync_pull,
+            vault_restore_from_sync,
             // OS security
             security_check_device,
             security_biometric_info,

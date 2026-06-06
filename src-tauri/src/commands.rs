@@ -1,3 +1,5 @@
+use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STD, Engine as _};
 use tauri::{State, Emitter};
 use crate::{AppState, CmdResult, map_err};
 use crate::ai::{AnomalyResult, PhishingResult};
@@ -187,8 +189,8 @@ pub async fn sync_push(
     app: tauri::AppHandle,
 ) -> CmdResult<()> {
     eprintln!("[SYNC] sync_push called");
-    // Extract vault data (sync, no await needed)
-    let (sync_key, hmac_key, vault_json, local_version) = {
+    // Extract vault data + salt (sync, no await needed)
+    let (sync_key, hmac_key, vault_json, local_version, kdf_salt) = {
         let vault = state.vault.lock().map_err(map_err)?;
         let (sk, hk) = vault.get_sync_keys().map_err(|e| {
             eprintln!("[SYNC] get_sync_keys failed: {}", e);
@@ -196,21 +198,20 @@ pub async fn sync_push(
         })?;
         let vj = vault.export_json().map_err(map_err)?;
         let lv = vault.version();
-        (sk, hk, vj, lv)
+        let salt = vault.get_kdf_salt().unwrap_or_default();
+        (sk, hk, vj, lv, salt)
     }; // vault lock released here
 
-    eprintln!("[SYNC] vault exported v{}, building push future...", local_version);
+    eprintln!("[SYNC] vault exported v{}, kdf_salt present={}, building push future...", local_version, !kdf_salt.is_empty());
 
-    // Get a Send-safe future from the engine (releases engine lock immediately)
     let push_fut = {
         let engine = state.sync_engine.lock().map_err(map_err)?;
-        engine.push_owned(vault_json, local_version, sync_key, hmac_key)
-    }; // engine lock released here
+        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt)
+    };
 
     match push_fut.await {
         Ok(s) => {
             eprintln!("[SYNC] push ok: {:?}", s);
-            // Notify all windows that the vault changed so they refresh
             let _ = app.emit("vault://changed", ());
             Ok(())
         }
@@ -227,17 +228,15 @@ pub async fn sync_pull(
     let (sync_key, hmac_key) = {
         let vault = state.vault.lock().map_err(map_err)?;
         vault.get_sync_keys().map_err(map_err)?
-    }; // vault lock released here
+    };
 
-    // Get a Send-safe future from the engine (releases engine lock immediately)
     let pull_fut = {
         let engine = state.sync_engine.lock().map_err(map_err)?;
         engine.pull_owned(sync_key, hmac_key)
-    }; // engine lock released here
+    };
 
     let (vault_json, server_version) = pull_fut.await.map_err(map_err)?;
 
-    // Re-lock vault only for import (no await after this)
     let imported = {
         let vault = state.vault.lock().map_err(map_err)?;
         if server_version > vault.version() {
@@ -248,13 +247,86 @@ pub async fn sync_pull(
         }
     };
 
-    // Only emit refresh event if vault actually changed
     if imported {
         let _ = app.emit("vault://refreshed", ());
     }
     Ok(())
 }
 
+/// Bootstrap a new device from cloud sync WITHOUT requiring a local vault.
+/// Flow: fetch payload → read kdf_salt → derive keys from password+salt → decrypt → create local vault.
+#[tauri::command]
+pub async fn vault_restore_from_sync(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    master_password: String,
+    user_id: String,
+) -> CmdResult<crate::vault::VaultMeta> {
+    use crate::crypto::{decode_salt, derive_master_key, derive_subkeys};
+
+    // 1. Fetch raw payload (no local vault needed)
+    let fetch_fut = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        engine.fetch_payload_owned(user_id.clone())
+    };
+    let payload = fetch_fut.await.map_err(|e| map_err(anyhow::anyhow!("Server error: {}", e)))?;
+
+    if payload.kdf_salt.is_empty() {
+        return Err(map_err(anyhow::anyhow!(
+            "Server vault was created with an older version that doesn't include the KDF salt. \n\nPlease open CryptoNote on your original device, go to Settings → Sync → push once to upgrade the sync format, then try again."
+        )));
+    }
+
+    // 2. Derive sync keys using the password + salt from the server payload
+    let salt_bytes = decode_salt(&payload.kdf_salt)
+        .map_err(|e| map_err(anyhow::anyhow!("Invalid KDF salt in server payload: {}", e)))?;
+    let master_key = derive_master_key(&master_password, &salt_bytes)
+        .map_err(map_err)?;
+    let keys = derive_subkeys(&master_key).map_err(map_err)?;
+
+    // 3. Verify HMAC
+    let hmac_input = if payload.kdf_salt.is_empty() {
+        format!("{}:{}:{}:{}:{}:{}",
+            payload.user_id, payload.device_id, payload.version,
+            payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext)
+    } else {
+        format!("{}:{}:{}:{}:{}:{}:{}",
+            payload.user_id, payload.device_id, payload.version,
+            payload.timestamp, payload.sequence,
+            payload.kdf_salt, payload.encrypted_vault.ciphertext)
+    };
+    let expected = BASE64_STD
+        .decode(&payload.hmac)
+        .map_err(|_| map_err(anyhow::anyhow!("Invalid HMAC in server payload")))?;
+    if !crate::crypto::verify_hmac(&keys.hmac_key, hmac_input.as_bytes(), &expected) {
+        return Err(map_err(anyhow::anyhow!(
+            "Wrong master password or the data was tampered with."
+        )));
+    }
+
+    // 4. Decrypt vault JSON
+    let vault_json = crate::crypto::decrypt_string(&keys.sync_key, &payload.encrypted_vault)
+        .map_err(|_| map_err(anyhow::anyhow!("Decryption failed – wrong master password?")))? ;
+
+    // 5. Bootstrap local vault: create with same password (generates new salt!) then import
+    //    We must write the original salt into the DB so future syncs use consistent keys.
+    let meta = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        // Create vault (generates new DB with schema)
+        let mut meta = vault.create(&master_password).map_err(map_err)?;
+        // Overwrite the auto-generated salt with the server's salt so keys stay consistent
+        vault.overwrite_salt(&payload.kdf_salt, &master_password).map_err(map_err)?;
+        meta.salt = payload.kdf_salt.clone();
+        // Import all entries from server
+        vault.import_json(&vault_json).map_err(map_err)?;
+        meta
+    };
+
+    // 6. Emit refresh event
+    let _ = app.emit("vault://refreshed", ());
+
+    Ok(meta)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  OS SECURITY COMMANDS

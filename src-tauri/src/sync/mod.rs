@@ -60,11 +60,14 @@ pub struct SyncPayload {
     pub timestamp: i64,
     /// Entire vault serialized and encrypted with the sync_key
     pub encrypted_vault: EncryptedData,
-    /// HMAC over (user_id || device_id || version || timestamp || encrypted_vault)
-    /// using hmac_key – prevents server-side tampering
+    /// HMAC over (user_id || device_id || version || timestamp || kdf_salt || encrypted_vault)
     pub hmac: String,
     /// Monotonic counter for replay attack protection
     pub sequence: u64,
+    /// Plaintext KDF salt (base64) — allows new devices to derive sync keys
+    /// The salt is not secret; it's standard practice to include it in plaintext.
+    #[serde(default)]
+    pub kdf_salt: String,
 }
 
 // ─── Server response ─────────────────────────────────────────────────────────
@@ -146,12 +149,14 @@ impl SyncEngine {
     }
 
     /// Build and sign a SyncPayload from vault JSON.
+    /// `kdf_salt_b64` is the base64-encoded Argon2 salt stored in vault meta.
     fn build_payload(
         &self,
         vault_json: &str,
         local_version: i64,
         sync_key: &SecureKey,
         hmac_key: &SecureKey,
+        kdf_salt_b64: &str,
     ) -> Result<SyncPayload> {
         let config = self.config.lock().unwrap();
         let user_id = config
@@ -161,7 +166,6 @@ impl SyncEngine {
         let device_id = config.device_id.clone();
         drop(config);
 
-        // Increment sequence counter (replay protection)
         let sequence = {
             let mut seq = self.sequence.lock().unwrap();
             *seq += 1;
@@ -169,18 +173,17 @@ impl SyncEngine {
         };
 
         let timestamp = chrono::Utc::now().timestamp();
-
-        // Encrypt entire vault JSON with sync_key
         let encrypted_vault = crypto::encrypt_string(sync_key, vault_json)?;
 
-        // Compute HMAC over key fields to prevent server tampering
+        // Include kdf_salt in HMAC so it's tamper-evident
         let hmac_input = format!(
-            "{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}",
             user_id,
             device_id,
             local_version,
             timestamp,
             sequence,
+            kdf_salt_b64,
             encrypted_vault.ciphertext
         );
         let hmac_bytes = crypto::compute_hmac(hmac_key, hmac_input.as_bytes());
@@ -194,6 +197,7 @@ impl SyncEngine {
             encrypted_vault,
             hmac,
             sequence,
+            kdf_salt: kdf_salt_b64.to_string(),
         })
     }
 
@@ -204,10 +208,11 @@ impl SyncEngine {
         local_version: i64,
         sync_key: &SecureKey,
         hmac_key: &SecureKey,
+        kdf_salt_b64: &str,
     ) -> Result<SyncStatus> {
         *self.status.lock().unwrap() = SyncStatus::Syncing;
 
-        let payload = self.build_payload(&vault_json, local_version, sync_key, hmac_key)?;
+        let payload = self.build_payload(&vault_json, local_version, sync_key, hmac_key, kdf_salt_b64)?;
 
         let (server_url, auth_token, tls_cert) = {
             let cfg = self.config.lock().unwrap();
@@ -341,9 +346,9 @@ impl SyncEngine {
         local_version: i64,
         sync_key: SecureKey,
         hmac_key: SecureKey,
+        kdf_salt_b64: String,
     ) -> impl std::future::Future<Output = Result<SyncStatus>> + Send + 'static {
-        // --- Extract all data while holding the lock (sync, no await) ---
-        let payload = self.build_payload(&vault_json, local_version, &sync_key, &hmac_key);
+        let payload = self.build_payload(&vault_json, local_version, &sync_key, &hmac_key, &kdf_salt_b64);
         let (server_url, auth_token, tls_cert) = {
             let cfg = self.config.lock().unwrap();
             (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone())
@@ -409,9 +414,17 @@ impl SyncEngine {
 
             let payload = sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server"))?;
 
-            let hmac_input = format!("{}:{}:{}:{}:{}:{}",
-                payload.user_id, payload.device_id, payload.version,
-                payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext);
+            // Support both legacy (no kdf_salt) and new (with kdf_salt) payloads
+            let hmac_input = if payload.kdf_salt.is_empty() {
+                format!("{}:{}:{}:{}:{}:{}",
+                    payload.user_id, payload.device_id, payload.version,
+                    payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext)
+            } else {
+                format!("{}:{}:{}:{}:{}:{}:{}",
+                    payload.user_id, payload.device_id, payload.version,
+                    payload.timestamp, payload.sequence,
+                    payload.kdf_salt, payload.encrypted_vault.ciphertext)
+            };
             let expected = base64::engine::general_purpose::STANDARD
                 .decode(&payload.hmac).map_err(|_| anyhow!("Invalid HMAC encoding"))?;
             if !crate::crypto::verify_hmac(&hmac_key, hmac_input.as_bytes(), &expected) {
@@ -422,6 +435,27 @@ impl SyncEngine {
                 .map_err(|_| anyhow!("Failed to decrypt pulled vault"))?;
             *status_ref.lock().unwrap() = SyncStatus::Synced { at: chrono::Utc::now().timestamp() };
             Ok((vault_json, payload.version))
+        }
+    }
+
+    /// Fetch the raw SyncPayload from the server (no decryption). Used for bootstrapping.
+    pub fn fetch_payload_owned(
+        &self,
+        user_id: String,
+    ) -> impl std::future::Future<Output = Result<SyncPayload>> + Send + 'static {
+        let (server_url, auth_token, tls_cert) = {
+            let cfg = self.config.lock().unwrap();
+            (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone())
+        };
+
+        async move {
+            let client = Self::build_client(tls_cert.as_deref())?;
+            let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
+            if let Some(token) = auth_token { req = req.bearer_auth(token); }
+            let response = req.send().await.map_err(|_| anyhow!("Network unavailable"))?;
+            let sync_resp: SyncResponse = response.json().await
+                .map_err(|e| anyhow!("Invalid response: {}", e))?;
+            sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server for this account"))
         }
     }
 
@@ -437,7 +471,7 @@ impl SyncEngine {
         };
 
         if let Some(p) = pending {
-            self.push(p.vault_json, p.local_version, sync_key, hmac_key)
+            self.push(p.vault_json, p.local_version, sync_key, hmac_key, "")
                 .await?;
         }
         Ok(())

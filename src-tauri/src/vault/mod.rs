@@ -195,6 +195,60 @@ impl Vault {
         Ok((state.keys.sync_key.clone(), state.keys.hmac_key.clone()))
     }
 
+    /// Read the plaintext KDF salt from the DB (available even when locked).
+    pub fn get_kdf_salt(&self) -> Result<String> {
+        let conn = self.open_db()?;
+        conn.query_row(
+            "SELECT value FROM vault_meta WHERE key = 'salt'",
+            [],
+            |row| row.get::<_, String>(0),
+        ).map_err(|_| anyhow!("Vault not initialised"))
+    }
+
+    /// Overwrite the KDF salt in the DB with the one from the server payload.
+    /// Also re-derives keys and re-encrypts the meta blob with the correct keys.
+    /// Called by vault_restore_from_sync after create() sets a wrong (new) salt.
+    pub fn overwrite_salt(&self, kdf_salt_b64: &str, master_password: &str) -> Result<()> {
+        let salt = crypto::decode_salt(kdf_salt_b64)?;
+        let master_key = crypto::derive_master_key(master_password, &salt)?;
+        let new_keys = crypto::derive_subkeys(&master_key)?;
+
+        let conn = self.open_db()?;
+
+        // Update the plaintext salt record
+        conn.execute(
+            "UPDATE vault_meta SET value=?1 WHERE key='salt'",
+            rusqlite::params![kdf_salt_b64],
+        )?;
+
+        // Re-read the meta, re-encrypt with new keys, and update
+        let meta_enc_json: String = conn.query_row(
+            "SELECT value FROM vault_meta WHERE key='meta_enc'",
+            [],
+            |row| row.get(0),
+        )?;
+        // Try to decrypt with current (wrong) keys first
+        let current_state = self.state.lock().unwrap();
+        if let Some(s) = current_state.as_ref() {
+            if let Ok(enc_data) = serde_json::from_str::<crypto::EncryptedData>(&meta_enc_json) {
+                if let Ok(meta_json) = crypto::decrypt_string(&s.keys.vault_key, &enc_data) {
+                    let re_enc = crypto::encrypt_string(&new_keys.vault_key, &meta_json)?;
+                    let re_enc_json = serde_json::to_string(&re_enc)?;
+                    conn.execute(
+                        "UPDATE vault_meta SET value=?1 WHERE key='meta_enc'",
+                        rusqlite::params![re_enc_json],
+                    )?;
+                }
+            }
+        }
+        drop(current_state);
+
+        // Update in-memory keys to the correct ones
+        let mut state = self.state.lock().unwrap();
+        *state = Some(VaultState { keys: new_keys });
+        Ok(())
+    }
+
     /// Add a new vault entry. Encrypts every sensitive field individually.
     pub fn add_entry(&self, entry: &VaultEntry) -> Result<()> {
         let state = self.state.lock().unwrap();
