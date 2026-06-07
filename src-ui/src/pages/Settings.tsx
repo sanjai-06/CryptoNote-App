@@ -171,10 +171,44 @@ export function SettingsPage() {
 
             {/* Main */}
             <div className='main-content' style={{ overflowY: 'auto' }}>
-                <div className='page-header'>
-                    <div>
-                        <h2>Settings</h2>
-                        <p className='text-sm text-muted' style={{ marginTop: 4 }}>Security, sync, and preferences</p>
+
+                {/* Mobile top bar (hidden on desktop via CSS) */}
+                <div className='mobile-header'>
+                    <div className='mobile-header-inner'>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <button
+                                className='icon-btn'
+                                onClick={() => navigate('/vault')}
+                                aria-label='Back to Vault'
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.2 }}>Settings</div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1 }}>Security, sync &amp; preferences</div>
+                            </div>
+                        </div>
+                        <button className='icon-btn' onClick={handleLockNow} title='Lock Vault'>
+                            <Lock size={17} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Desktop page header */}
+                <div className='page-header desktop-only'>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <button
+                            className='btn btn-ghost btn-icon'
+                            onClick={() => navigate('/vault')}
+                            title='Back to Vault'
+                            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', flexShrink: 0 }}
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+                        <div>
+                            <h2>Settings</h2>
+                            <p className='text-sm text-muted' style={{ marginTop: 4 }}>Security, sync, and preferences</p>
+                        </div>
                     </div>
                 </div>
 
