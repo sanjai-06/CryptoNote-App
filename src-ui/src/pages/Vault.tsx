@@ -259,11 +259,10 @@ export function VaultPage() {
                             {/* Mobile back nav strip */}
                             <div className='mobile-back-btn'>
                                 <button
-                                    className='btn btn-ghost'
-                                    style={{ gap: 6, padding: '6px 12px', fontSize: '0.85rem' }}
                                     onClick={() => { setSelectedEntryId(null); setShowAddModal(false); }}
                                 >
-                                    ← Back to Vault
+                                    <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
+                                    All Items
                                 </button>
                             </div>
                             <ItemDetail

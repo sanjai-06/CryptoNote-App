@@ -212,7 +212,7 @@ export function SettingsPage() {
                     </div>
                 </div>
 
-                <div style={{ padding: '24px 32px', maxWidth: 640 }}>
+                <div style={{ padding: 'clamp(16px, 4vw, 32px) clamp(16px, 5vw, 32px)', maxWidth: 640 }}>
 
                     {/* ── Security status ────────────────────────────────── */}
                     <div className='settings-section'>
