@@ -48,13 +48,15 @@ export function SettingsPage() {
     const [savedMsg, setSavedMsg] = useState('');
     const [syncError, setSyncError] = useState('');
 
-    // Biometric enrollment modal
+    // Biometric enrollment
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
     const [bioEnrollPw, setBioEnrollPw]       = useState('');
     const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
     const [bioEnrollError, setBioEnrollError] = useState('');
+    const [bioEnrolling, setBioEnrolling]     = useState(false);
     const bioEnrollRef = useRef<HTMLInputElement>(null);
     const isEnrolled = getBiometricPassword() !== null;
+    const enrolledAt = (() => { try { return localStorage.getItem('cryptonote_bio_enrolled_at'); } catch { return null; } })();
 
     // Re-apply saved sync config to Tauri engine on mount
     useEffect(() => {
@@ -121,6 +123,27 @@ export function SettingsPage() {
         await vaultLock();
         setLocked(true);
         navigate('/unlock');
+    }
+
+    // Verify password against vault, then store it for biometric unlock
+    async function doEnroll() {
+        if (!bioEnrollPw) return;
+        setBioEnrolling(true);
+        setBioEnrollError('');
+        try {
+            // Import vaultUnlock inline to verify password (vault is already unlocked,
+            // but we call it to confirm the password is correct before trusting it)
+            const { vaultUnlock: verify } = await import('../hooks/useVault');
+            await verify(bioEnrollPw);
+            storeBiometricPassword(bioEnrollPw);
+            try { localStorage.setItem('cryptonote_bio_enrolled_at', String(Date.now())); } catch {}
+            setShowBioEnroll(false);
+            flash('Biometric unlock enrolled ✓');
+        } catch {
+            setBioEnrollError('Password is incorrect. Please try again.');
+        } finally {
+            setBioEnrolling(false);
+        }
     }
 
     return (
@@ -293,6 +316,7 @@ export function SettingsPage() {
                     {/* ── Biometric Unlock ─────────────────────────────────── */}
                     <div className='settings-section'>
                         <div className='settings-section-title'><Fingerprint size={13} style={{ display: 'inline', marginRight: 6 }} />Biometric Unlock</div>
+
                         <div className='settings-row'>
                             <div>
                                 <div className='settings-row-label'>Unlock with Biometrics</div>
@@ -301,48 +325,52 @@ export function SettingsPage() {
                             <label className='toggle'>
                                 <input type='checkbox' checked={biometricEnabled} onChange={(e) => {
                                     if (e.target.checked) {
-                                        // Enable: show enrollment modal to capture password now
                                         setBiometricEnabled(true);
                                         setShowBioEnroll(true);
                                         setBioEnrollPw('');
                                         setBioEnrollError('');
-                                        setTimeout(() => bioEnrollRef.current?.focus(), 100);
+                                        setTimeout(() => bioEnrollRef.current?.focus(), 120);
                                     } else {
-                                        // Disable: clear stored credential
                                         setBiometricEnabled(false);
+                                        try { localStorage.removeItem('cryptonote_bio_enrolled_at'); } catch {}
                                         flash('Biometric unlock disabled');
                                     }
                                 }} />
                                 <span className='toggle-slider' />
                             </label>
                         </div>
-                        {biometricEnabled && (
-                            <div style={{
-                                padding: '10px 14px', marginTop: 4,
-                                background: isEnrolled ? 'rgba(0,229,160,0.08)' : 'rgba(255,170,0,0.08)',
-                                borderRadius: 'var(--radius-md)',
-                                border: `1px solid ${isEnrolled ? 'rgba(0,229,160,0.2)' : 'rgba(255,170,0,0.3)'}`,
-                                fontSize: '0.8rem', color: 'var(--text-secondary)',
-                            }}>
-                                <Fingerprint size={13} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-                                {isEnrolled
-                                    ? '✓ Biometric unlock is active on this device.'
-                                    : '⚠ Enter your master password below to complete enrollment.'}
+
+                        {/* Enrollment status */}
+                        {biometricEnabled && isEnrolled && !showBioEnroll && (
+                            <div style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--color-success)' }}>
+                                    <Fingerprint size={14} />
+                                    <span>
+                                        Active{enrolledAt ? ` · enrolled ${new Date(Number(enrolledAt)).toLocaleDateString()}` : ''}
+                                    </span>
+                                </div>
+                                <button className='btn btn-secondary' style={{ fontSize: '0.78rem', padding: '6px 12px', minHeight: 0 }}
+                                    onClick={() => { setShowBioEnroll(true); setBioEnrollPw(''); setBioEnrollError(''); setTimeout(() => bioEnrollRef.current?.focus(), 120); }}>
+                                    Re-enroll
+                                </button>
                             </div>
                         )}
 
-                        {/* Biometric enrollment modal */}
+                        {biometricEnabled && !isEnrolled && !showBioEnroll && (
+                            <div style={{ padding: '10px 20px 14px', fontSize: '0.8rem', color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <AlertTriangle size={13} />
+                                Enrollment incomplete — enter your master password to activate.
+                            </div>
+                        )}
+
+                        {/* Enrollment form */}
                         {showBioEnroll && (
-                            <div style={{
-                                marginTop: 12, padding: 16,
-                                background: 'var(--bg-surface)',
-                                borderRadius: 'var(--radius-lg)',
-                                border: '1px solid var(--border)',
-                            }}>
-                                <p style={{ fontSize: '0.875rem', marginBottom: 10 }}>
-                                    Enter your master password to enroll biometrics:
+                            <div style={{ margin: '0 16px 16px', padding: 16, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-accent)' }}>
+                                <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 4 }}>Confirm Master Password</p>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                                    Your password will be securely stored on this device and used for biometric unlock.
                                 </p>
-                                <div style={{ position: 'relative', marginBottom: 10 }}>
+                                <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 10 }}>
                                     <input
                                         ref={bioEnrollRef}
                                         type={showBioEnrollPw ? 'text' : 'password'}
@@ -350,34 +378,31 @@ export function SettingsPage() {
                                         placeholder='Master password…'
                                         value={bioEnrollPw}
                                         onChange={(e) => { setBioEnrollPw(e.target.value); setBioEnrollError(''); }}
-                                        onKeyDown={(e) => e.key === 'Enter' && bioEnrollPw && (() => {
-                                            storeBiometricPassword(bioEnrollPw);
-                                            setShowBioEnroll(false);
-                                            flash('Biometric unlock enrolled ✓');
-                                        })()}
+                                        style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
+                                        onKeyDown={async (e) => { if (e.key === 'Enter' && bioEnrollPw) { e.preventDefault(); await doEnroll(); } }}
                                     />
-                                    <button type='button' className='btn btn-ghost btn-icon'
-                                        style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
-                                        onClick={() => setShowBioEnrollPw(v => !v)}>
+                                    <button type='button' tabIndex={-1}
+                                        onClick={() => setShowBioEnrollPw(v => !v)}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, flexShrink: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0', cursor: 'pointer', color: 'var(--text-muted)' }}>
                                         {showBioEnrollPw ? <EyeOff size={15} /> : <Eye size={15} />}
                                     </button>
                                 </div>
                                 {bioEnrollError && (
-                                    <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 8 }}>{bioEnrollError}</p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-danger)', fontSize: '0.8rem', marginBottom: 10 }}>
+                                        <AlertTriangle size={13} />{bioEnrollError}
+                                    </div>
                                 )}
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <button className='btn btn-primary' style={{ flex: 1 }}
-                                        disabled={!bioEnrollPw}
-                                        onClick={() => {
-                                            storeBiometricPassword(bioEnrollPw);
-                                            setShowBioEnroll(false);
-                                            flash('Biometric unlock enrolled ✓');
-                                        }}>
-                                        <Fingerprint size={15} /> Enroll
+                                        disabled={!bioEnrollPw || bioEnrolling}
+                                        onClick={doEnroll}>
+                                        {bioEnrolling
+                                            ? <><div style={{ width: 14, height: 14, border: '2px solid #080c10', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Verifying…</>
+                                            : <><Fingerprint size={14} />Enroll Biometrics</>}
                                     </button>
                                     <button className='btn btn-secondary' onClick={() => {
-                                        setBiometricEnabled(false);
                                         setShowBioEnroll(false);
+                                        if (!isEnrolled) setBiometricEnabled(false);
                                     }}>Cancel</button>
                                 </div>
                             </div>
@@ -470,17 +495,7 @@ export function SettingsPage() {
                         )}
                     </div>
 
-                    {/* ── Biometrics ──────────────────────────────────────── */}
-                    <div className='settings-section'>
-                        <div className='settings-section-title'><Smartphone size={13} style={{ display: 'inline', marginRight: 6 }} />Biometric Unlock</div>
-                        <div className='settings-row'>
-                            <div>
-                                <div className='settings-row-label'>Face ID / Touch ID / Fingerprint</div>
-                                <div className='settings-row-desc'>Available on Android & iOS via Tauri plugin</div>
-                            </div>
-                            <span className='badge badge-info'>Mobile Only</span>
-                        </div>
-                    </div>
+
 
                     {/* ── Password Generator ───────────────────────────── */}
                     <div className='settings-section'>
