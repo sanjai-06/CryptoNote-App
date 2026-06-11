@@ -58,9 +58,14 @@ export function SettingsPage() {
     const isEnrolled = getBiometricPassword() !== null;
     const enrolledAt = (() => { try { return localStorage.getItem('cryptonote_bio_enrolled_at'); } catch { return null; } })();
 
+    // Biometric sensor status
+    type BioSensorStatus = 'checking' | 'available' | 'notEnrolled' | 'unavailable' | 'notAvailable' | 'unknown';
+    const [bioSensorStatus, setBioSensorStatus] = useState<BioSensorStatus>('checking');
+
     // Re-apply saved sync config to Tauri engine on mount
     useEffect(() => {
         runDeviceCheck();
+        checkBioSensor();
         if (syncEmail && syncServerUrl) {
             syncConfigure({
                 server_url: syncServerUrl,
@@ -70,6 +75,25 @@ export function SettingsPage() {
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    async function checkBioSensor() {
+        setBioSensorStatus('checking');
+        try {
+            const { checkStatus } = await import('@tauri-apps/plugin-biometric');
+            const status = await checkStatus();
+            // Status = { isAvailable: boolean, biometryType, errorCode? }
+            if (status.isAvailable) {
+                setBioSensorStatus('available');
+            } else {
+                const code = status.errorCode ?? '';
+                if (code === 'biometryNotEnrolled') setBioSensorStatus('notEnrolled');
+                else if (code === 'biometryLockout')  setBioSensorStatus('unavailable');
+                else                                  setBioSensorStatus('notAvailable');
+            }
+        } catch (e: any) {
+            setBioSensorStatus('unknown');
+        }
+    }
 
     async function runDeviceCheck() {
         setCheckingDevice(true);
@@ -316,6 +340,44 @@ export function SettingsPage() {
                     {/* ── Biometric Unlock ─────────────────────────────────── */}
                     <div className='settings-section'>
                         <div className='settings-section-title'><Fingerprint size={13} style={{ display: 'inline', marginRight: 6 }} />Biometric Unlock</div>
+
+                        {/* Sensor status row */}
+                        <div className='settings-row'>
+                            <div>
+                                <div className='settings-row-label'>Sensor Status</div>
+                                <div className='settings-row-desc'>
+                                    {bioSensorStatus === 'available' && 'Fingerprint / Face ID sensor detected and enrolled'}
+                                    {bioSensorStatus === 'notEnrolled' && 'Sensor detected but no fingerprints registered in system settings'}
+                                    {bioSensorStatus === 'unavailable' && 'Sensor temporarily unavailable (too many attempts or locked)'}
+                                    {bioSensorStatus === 'notAvailable' && 'No biometric hardware found on this device'}
+                                    {bioSensorStatus === 'checking' && 'Detecting sensor…'}
+                                    {bioSensorStatus === 'unknown' && 'Could not determine sensor status'}
+                                </div>
+                                {bioSensorStatus === 'notEnrolled' && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)', marginTop: 4 }}>
+                                        → Go to Settings → Security → Fingerprint and add a fingerprint.
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                <span className={`badge ${
+                                    bioSensorStatus === 'available' ? 'badge-success'
+                                    : bioSensorStatus === 'notEnrolled' ? 'badge-warning'
+                                    : bioSensorStatus === 'checking' ? 'badge-info'
+                                    : 'badge-danger'
+                                }`}>
+                                    {bioSensorStatus === 'available' ? 'Ready'
+                                        : bioSensorStatus === 'notEnrolled' ? 'Not Enrolled'
+                                        : bioSensorStatus === 'unavailable' ? 'Locked'
+                                        : bioSensorStatus === 'notAvailable' ? 'No Hardware'
+                                        : bioSensorStatus === 'checking' ? 'Checking…'
+                                        : 'Unknown'}
+                                </span>
+                                <button className='icon-btn' title='Re-check sensor' onClick={checkBioSensor} style={{ width: 32, height: 32, borderRadius: 8 }}>
+                                    <RefreshCw size={13} />
+                                </button>
+                            </div>
+                        </div>
 
                         <div className='settings-row'>
                             <div>
