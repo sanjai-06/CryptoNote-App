@@ -58,3 +58,7 @@ Thumbs.db
 *.tmp
 *.temp
 2fa-email-*.html
+
+# Android release keystore (store securely, never commit)
+cryptonote-release.jks
+cryptonote-release.jks.b64
