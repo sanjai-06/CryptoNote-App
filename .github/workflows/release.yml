@@ -124,13 +124,16 @@ jobs:
             libssl-dev \
             imagemagick
 
-      # ── Decode the persistent release keystore from GitHub Secrets ──
-      # This ensures EVERY build is signed with the same key, so Android
-      # allows over-the-air updates without uninstalling first.
-      - name: Decode keystore
+      # ── Restore persistent debug keystore ─────────────────────────
+      # Each CI runner generates a NEW debug.keystore by default, which
+      # makes every APK have a different signature → Android blocks updates.
+      # Fix: store our own debug.keystore in GitHub Secrets and restore it
+      # here so the signature is always the same across all builds.
+      - name: Restore persistent debug keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > $HOME/cryptonote-release.jks
-          echo "KEYSTORE_PATH=$HOME/cryptonote-release.jks" >> $GITHUB_ENV
+          mkdir -p $HOME/.android
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > $HOME/.android/debug.keystore
+          echo "✓ debug.keystore restored ($(wc -c < $HOME/.android/debug.keystore) bytes)"
 
       - name: Install npm dependencies
         run: npm ci
@@ -156,28 +159,26 @@ jobs:
             echo "✓ $dir (${size}x${size})"
           done
 
-      # ── Build release APK (unsigned) then sign it with our keystore ──
-      # Release mode = optimized, smaller, and properly signable.
-      - name: Build Android release APK
-        run: npx tauri android build --apk --target aarch64
+      - name: Build Android debug APK
+        run: npx tauri android build --apk --debug --target aarch64
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
 
-      - name: Find unsigned release APK
+      - name: Find and copy APK
         run: |
+          mkdir -p dist
           echo "=== All APKs ==="
           find src-tauri/gen/android -name "*.apk" -type f | sort
 
-          # Prefer release arm64 APK (unsigned)
+          # Pick arm64 debug APK
           APK=$(find src-tauri/gen/android \
-            \( -name "*arm64*release*.apk" -o -name "*release*arm64*.apk" \) \
-            -not -name "*signed*" \
+            \( -name "*arm64*debug*.apk" -o -name "*debug*arm64*.apk" \) \
             -type f | head -1)
 
-          # Fallback: any release APK
+          # Fallback: any non-universal debug APK
           if [ -z "$APK" ]; then
             APK=$(find src-tauri/gen/android \
-              -name "*release*.apk" -not -name "*signed*" \
+              -name "*debug*.apk" -not -name "*universal*" \
               -type f | head -1)
           fi
 
@@ -190,28 +191,8 @@ jobs:
             echo "ERROR: No APK found!"; exit 1
           fi
 
-          echo "UNSIGNED_APK=$APK" >> $GITHUB_ENV
-          echo "Found APK: $APK"
-
-      - name: Zipalign APK
-        run: |
-          ZIPALIGN="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/zipalign"
-          mkdir -p dist
-          "$ZIPALIGN" -v 4 "$UNSIGNED_APK" dist/cryptonote-arm64-aligned.apk
-          echo "✓ zipalign done"
-
-      - name: Sign APK with release keystore
-        run: |
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE_PATH" \
-            --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
-            --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            --key-pass "pass:${{ secrets.ANDROID_KEY_PASSWORD }}" \
-            --out dist/cryptonote-arm64.apk \
-            dist/cryptonote-arm64-aligned.apk
-          echo "✓ APK signed"
-          "$APKSIGNER" verify --verbose dist/cryptonote-arm64.apk | head -5
+          cp "$APK" dist/cryptonote-arm64.apk
+          echo "✓ APK: $(du -sh dist/cryptonote-arm64.apk | cut -f1)"
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
@@ -231,7 +212,7 @@ jobs:
           fail-if-no-assets: false
         continue-on-error: true
 
-      - name: Attach signed APK to Release
+      - name: Attach APK to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:

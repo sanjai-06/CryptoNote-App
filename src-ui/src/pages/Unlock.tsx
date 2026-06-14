@@ -72,62 +72,52 @@ export function UnlockPage() {
         setError('');
         try {
             if (isTauri()) {
-                const { authenticate, checkStatus } = await import('@tauri-apps/plugin-biometric');
+                const { authenticate } = await import('@tauri-apps/plugin-biometric');
+                try {
+                    await authenticate('Unlock CryptoNote', {
+                        allowDeviceCredential: true,
+                        title: 'CryptoNote',
+                        subtitle: 'Use fingerprint to unlock',
+                        cancelTitle: 'Use Password',
+                    });
+                    // authenticate() resolved → biometric passed
+                } catch (authErr: any) {
+                    // Normalise the error — plugin can throw a string, an Error, or an object
+                    const msg = typeof authErr === 'string'
+                        ? authErr
+                        : authErr?.message ?? authErr?.toString() ?? 'unknown';
+                    const code = authErr?.errorCode ?? '';
+                    console.warn('[biometric] error — code:', code, 'msg:', msg);
 
-                // Pre-check: is the biometric sensor available?
-                // Status = { isAvailable: boolean, biometryType, errorCode? }
-                const status = await checkStatus().catch(() => null);
-                console.log('[biometric] status:', status);
-
-                if (!status || !status.isAvailable) {
-                    const code = status?.errorCode ?? '';
-                    if (code === 'biometryNotEnrolled') {
-                        throw new Error('No biometric enrolled. Go to Phone Settings → Security and add a fingerprint.');
+                    // User deliberately tapped "Use Password" / cancelled → switch to pw screen
+                    const isCancel = ['userCancel', 'appCancel', 'systemCancel', 'userFallback'].includes(code)
+                        || msg.toLowerCase().includes('cancel')
+                        || msg.toLowerCase().includes('user cancel');
+                    if (isCancel) {
+                        setBioState('idle');
+                        setShowPwScreen(true);
+                        return;
                     }
-                    // All other unavailable cases (biometryNotAvailable, biometryLockout, etc.):
-                    // silently fall through and unlock with stored password
-                    console.warn('[biometric] not available, errorCode:', code);
-                } else {
-                    // Sensor is available — show the prompt
-                    try {
-                        await authenticate('Unlock your CryptoNote vault', {
-                            allowDeviceCredential: false,
-                            title: 'CryptoNote',
-                            subtitle: 'Confirm your identity to unlock',
-                        });
-                    } catch (authErr: any) {
-                        const raw = authErr?.toString() ?? '';
-                        const code = (authErr as any)?.errorCode ?? '';
-                        console.warn('[biometric] authenticate error, code:', code, 'raw:', raw);
 
-                        // User cancellations and real failures
-                        const isUserCancel = ['userCancel', 'appCancel', 'systemCancel'].includes(code)
-                            || raw.toLowerCase().includes('cancel');
-                        const isHardwareFail = ['biometryLockout', 'biometryNotAvailable'].includes(code)
-                            || raw.toLowerCase().includes('lockout')
-                            || raw.toLowerCase().includes('unavailable');
-
-                        if (isHardwareFail) {
-                            // Hardware issue — fall through to stored password silently
-                            console.warn('[biometric] hardware fail — using stored password');
-                        } else if (isUserCancel) {
-                            throw new Error('Biometric cancelled.');
-                        } else {
-                            throw new Error('Authentication failed. Try again or use your master password.');
-                        }
+                    // Sensor not enrolled / not available → surface a clear message
+                    if (code === 'biometryNotEnrolled' || msg.toLowerCase().includes('not enrolled')) {
+                        throw new Error('No fingerprint enrolled. Add one in Phone Settings → Security → Fingerprint.');
                     }
+
+                    // Any other error: show the raw message so we can diagnose
+                    throw new Error(msg || `Biometric error (${code || 'unknown'})`);
                 }
             }
 
-            // Always try stored password at this point (whether biometric passed or was skipped)
+            // Biometric passed (or not Tauri) — unlock with stored password
             const pw = getBiometricPassword();
-            if (!pw) throw new Error('Biometric credential lost. Please use your master password.');
+            if (!pw) throw new Error('Biometric credential lost — please use your master password.');
             setBioState('success');
             await doUnlock(pw);
         } catch (err: any) {
             setBioState('error');
-            setError(err?.message ?? err?.toString() ?? 'Authentication failed. Try again.');
-            bioTimerRef.current = setTimeout(() => setBioState('idle'), 2200);
+            setError(err?.message ?? err?.toString() ?? 'Authentication failed.');
+            bioTimerRef.current = setTimeout(() => setBioState('idle'), 2800);
         }
     }, [bioState, doUnlock, getBiometricPassword]);
 

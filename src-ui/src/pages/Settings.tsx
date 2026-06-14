@@ -81,16 +81,16 @@ export function SettingsPage() {
         try {
             const { checkStatus } = await import('@tauri-apps/plugin-biometric');
             const status = await checkStatus();
-            // Status = { isAvailable: boolean, biometryType, errorCode? }
             if (status.isAvailable) {
                 setBioSensorStatus('available');
             } else {
                 const code = status.errorCode ?? '';
-                if (code === 'biometryNotEnrolled') setBioSensorStatus('notEnrolled');
+                if (code === 'biometryNotEnrolled')  setBioSensorStatus('notEnrolled');
                 else if (code === 'biometryLockout')  setBioSensorStatus('unavailable');
                 else                                  setBioSensorStatus('notAvailable');
             }
-        } catch (e: any) {
+        } catch {
+            // Plugin not available on this platform (desktop) — that's fine
             setBioSensorStatus('unknown');
         }
     }

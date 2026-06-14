@@ -62,3 +62,5 @@ Thumbs.db
 # Android release keystore (store securely, never commit)
 cryptonote-release.jks
 cryptonote-release.jks.b64
+cryptonote-debug.keystore
+cryptonote-debug.keystore.b64
