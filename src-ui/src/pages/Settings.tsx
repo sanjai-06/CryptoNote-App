@@ -5,15 +5,19 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, Clock, Cloud, Smartphone, Lock,
-    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette, Fingerprint, Eye, EyeOff
+    Key, AlertTriangle, ChevronLeft, RefreshCw, Palette,
+    Fingerprint, Eye, EyeOff, Download, CheckCircle2
 } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
 import {
-    setAutoLockTimeout, syncConfigure, securityCheckDevice, vaultLock
+    vaultLock, syncConfigure, securityCheckDevice,
+    setAutoLockTimeout, syncPull, syncPush,
 } from '../hooks/useVault';
+import { isTauri } from '@tauri-apps/api/core';
 import { useVaultStore } from '../store/vaultStore';
+
 
 const lockOptions = [
     { label: '1 minute', value: 60 },
@@ -48,7 +52,9 @@ export function SettingsPage() {
     const [savedMsg, setSavedMsg] = useState('');
     const [syncError, setSyncError] = useState('');
 
-    // Biometric enrollment
+    const [syncPullState, setSyncPullState] = useState<'idle'|'pulling'|'ok'|'error'>('idle');
+    const [syncPushState, setSyncPushState] = useState<'idle'|'pushing'|'ok'|'error'>('idle');
+    const [syncActionMsg, setSyncActionMsg] = useState('');
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
     const [bioEnrollPw, setBioEnrollPw]       = useState('');
     const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
@@ -141,6 +147,41 @@ export function SettingsPage() {
     function flash(msg: string) {
         setSavedMsg(msg);
         setTimeout(() => setSavedMsg(''), 2500);
+    }
+
+    async function handleSyncNow() {
+        setSyncPushState('pushing');
+        setSyncActionMsg('');
+        try {
+            await syncPush();
+            setSyncPushState('ok');
+            setSyncActionMsg('Vault pushed to cloud ✓');
+            setTimeout(() => { setSyncPushState('idle'); setSyncActionMsg(''); }, 3000);
+        } catch (err: any) {
+            setSyncPushState('error');
+            setSyncActionMsg(err?.message ?? 'Push failed. Check your sync settings.');
+        }
+    }
+
+    async function handleForcePull() {
+        setSyncPullState('pulling');
+        setSyncActionMsg('');
+        try {
+            await syncPull();
+            setSyncPullState('ok');
+            setSyncActionMsg('Vault pulled from cloud ✓ — your passwords are now synced.');
+            setTimeout(() => { setSyncPullState('idle'); setSyncActionMsg(''); }, 5000);
+        } catch (err: any) {
+            setSyncPullState('error');
+            const msg = err?.message ?? '';
+            if (msg.includes('No vault data')) {
+                setSyncActionMsg('No data on server for this account. Make sure sync is enabled on your other device and the email matches.');
+            } else if (msg.includes('HMAC') || msg.includes('decrypt')) {
+                setSyncActionMsg('Decryption failed — the master password on this device does not match the one used to push the vault.');
+            } else {
+                setSyncActionMsg(msg || 'Pull failed. Is the server awake? Try again in 30 seconds.');
+            }
+        }
     }
 
     async function handleLockNow() {
@@ -492,7 +533,7 @@ export function SettingsPage() {
                         </div>
                     </div>
 
-                    {/* ── Sync ───────────────────────────────────────────── */}
+                    {/* ── Encrypted Cloud Sync ─────────────────────────── */}
                     <div className='settings-section'>
                         <div className='settings-section-title'><Cloud size={13} style={{ display: 'inline', marginRight: 6 }} />Encrypted Cloud Sync</div>
 
@@ -538,9 +579,75 @@ export function SettingsPage() {
                                 }}>
                                     🔒 Your vault is encrypted before leaving this device. The server stores only an encrypted blob — it cannot read your data.
                                 </div>
+
                                 <button className='btn btn-primary' onClick={handleSaveSync} disabled={isSavingSync}>
                                     <Cloud size={14} /> {isSavingSync ? 'Saving…' : 'Save Sync Settings'}
                                 </button>
+
+                                {/* ── Sync action buttons (only when settings are saved) ── */}
+                                {syncServerUrl && syncEmail && (
+                                    <>
+                                        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Sync Actions</div>
+
+                                        {/* Sync Now (push) */}
+                                        <button className='btn btn-secondary'
+                                            disabled={syncPushState === 'pushing'}
+                                            onClick={handleSyncNow}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <RefreshCw size={14} className={syncPushState === 'pushing' ? 'spin' : ''} />
+                                            {syncPushState === 'pushing' ? 'Pushing…' : 'Sync Now (Push to Cloud)'}
+                                        </button>
+
+                                        {/* Force Pull */}
+                                        <div style={{
+                                            background: 'rgba(255,140,0,0.07)',
+                                            border: '1px solid rgba(255,140,0,0.25)',
+                                            borderRadius: 'var(--radius-md)',
+                                            padding: '12px 14px',
+                                        }}>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-warning)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <AlertTriangle size={13} /> Pull from Cloud
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                                                Downloads the latest vault from the server and merges it into this device.
+                                                Use this if you just set up sync on a new device and your passwords aren't showing.
+                                            </div>
+                                            <button className='btn btn-secondary'
+                                                style={{ width: '100%', borderColor: 'rgba(255,140,0,0.3)' }}
+                                                disabled={syncPullState === 'pulling'}
+                                                onClick={handleForcePull}>
+                                                <Download size={14} className={syncPullState === 'pulling' ? 'spin' : ''} />
+                                                {syncPullState === 'pulling' ? 'Pulling from server… (may take 30s)' : 'Pull from Cloud'}
+                                            </button>
+                                        </div>
+
+                                        {/* Status message */}
+                                        {syncActionMsg && (
+                                            <div style={{
+                                                padding: '10px 14px',
+                                                borderRadius: 'var(--radius-md)',
+                                                fontSize: '0.8rem',
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: 8,
+                                                background: (syncPullState === 'error' || syncPushState === 'error')
+                                                    ? 'rgba(239,68,68,0.08)' : 'rgba(0,229,160,0.08)',
+                                                border: `1px solid ${
+                                                    (syncPullState === 'error' || syncPushState === 'error')
+                                                    ? 'var(--border-danger)' : 'var(--border-accent)'}`,
+                                                color: (syncPullState === 'error' || syncPushState === 'error')
+                                                    ? 'var(--color-danger)' : 'var(--color-success)',
+                                            }}>
+                                                {(syncPullState === 'error' || syncPushState === 'error')
+                                                    ? <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                                                    : <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
+                                                {syncActionMsg}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
                                 {syncError && (
                                     <div style={{
                                         background: 'rgba(239,68,68,0.08)',
@@ -556,8 +663,6 @@ export function SettingsPage() {
                             </div>
                         )}
                     </div>
-
-
 
                     {/* ── Password Generator ───────────────────────────── */}
                     <div className='settings-section'>

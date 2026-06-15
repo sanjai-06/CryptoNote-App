@@ -237,19 +237,22 @@ pub async fn sync_pull(
 
     let (vault_json, server_version) = pull_fut.await.map_err(map_err)?;
 
-    let imported = {
+    {
         let vault = state.vault.lock().map_err(map_err)?;
-        if server_version > vault.version() {
+        let local_version = vault.version();
+        eprintln!("[SYNC] pull: server_version={}, local_version={}", server_version, local_version);
+        // Import whenever server is same or newer — covers the "new device" case
+        // where both start at version 0 but server has real data.
+        if server_version >= local_version {
             vault.import_json(&vault_json).map_err(map_err)?;
-            true
+            eprintln!("[SYNC] pull: imported {} bytes of vault data", vault_json.len());
         } else {
-            false
+            eprintln!("[SYNC] pull: local is newer, skipping import");
         }
-    };
-
-    if imported {
-        let _ = app.emit("vault://refreshed", ());
     }
+
+    // Always emit refresh so UI reflects whatever is in the vault now
+    let _ = app.emit("vault://refreshed", ());
     Ok(())
 }
 
