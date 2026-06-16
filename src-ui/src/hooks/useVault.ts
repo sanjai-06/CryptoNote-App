@@ -153,6 +153,12 @@ export const syncPull = (): Promise<void> =>
         ? tauriInvoke('sync_pull')
         : Promise.resolve(); // browser vault pulls on unlock
 
+/** Bootstrap a new device from cloud — uses the server's kdf_salt so keys align. */
+export const vaultRestoreFromSync = (masterPassword: string, userId: string): Promise<VaultMeta> =>
+    isTauri()
+        ? tauriInvoke<VaultMeta>('vault_restore_from_sync', { masterPassword, userId })
+        : Promise.reject(new Error('Restore from cloud is only available in the desktop/mobile app.'));
+
 // ─── Auto-lock ─────────────────────────────────────────────────────────────── //
 
 export const setAutoLockTimeout = (seconds: number): Promise<void> =>

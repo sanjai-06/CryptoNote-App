@@ -13,7 +13,7 @@ import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
 import {
     vaultLock, syncConfigure, securityCheckDevice,
-    setAutoLockTimeout, syncPull, syncPush,
+    setAutoLockTimeout, syncPull, syncPush, vaultRestoreFromSync,
 } from '../hooks/useVault';
 import { isTauri } from '@tauri-apps/api/core';
 import { useVaultStore } from '../store/vaultStore';
@@ -55,6 +55,9 @@ export function SettingsPage() {
     const [syncPullState, setSyncPullState] = useState<'idle'|'pulling'|'ok'|'error'>('idle');
     const [syncPushState, setSyncPushState] = useState<'idle'|'pushing'|'ok'|'error'>('idle');
     const [syncActionMsg, setSyncActionMsg] = useState('');
+    const [showRestoreForm, setShowRestoreForm] = useState(false);
+    const [restorePw, setRestorePw]   = useState('');
+    const [showRestorePw, setShowRestorePw] = useState(false);
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
     const [bioEnrollPw, setBioEnrollPw]       = useState('');
     const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
@@ -163,23 +166,45 @@ export function SettingsPage() {
         }
     }
 
-    async function handleForcePull() {
+    async function handleRestoreFromCloud() {
+        if (!restorePw.trim()) return;
         setSyncPullState('pulling');
         setSyncActionMsg('');
+        // Use the saved email from store, or the current email input
+        const userId = email.trim() || syncEmail;
+        if (!userId) {
+            setSyncPullState('error');
+            setSyncActionMsg('Enter your Account Email in sync settings first.');
+            return;
+        }
         try {
-            await syncPull();
+            // vault_restore_from_sync:
+            // 1. Downloads the encrypted payload from the server
+            // 2. Reads the kdf_salt FROM the payload (not from local vault)
+            // 3. Derives sync keys using password + server kdf_salt
+            // 4. Verifies HMAC + decrypts
+            // 5. Creates local vault with the server's kdf_salt
+            // 6. Imports all entries
+            await vaultRestoreFromSync(restorePw.trim(), userId);
             setSyncPullState('ok');
-            setSyncActionMsg('Vault pulled from cloud ✓ — your passwords are now synced.');
-            setTimeout(() => { setSyncPullState('idle'); setSyncActionMsg(''); }, 5000);
+            setSyncActionMsg('Vault restored ✓ All your passwords have been synced to this device.');
+            setRestorePw('');
+            setShowRestoreForm(false);
+            // Reload vault page to show all imported entries
+            setTimeout(() => navigate('/vault'), 1500);
         } catch (err: any) {
             setSyncPullState('error');
-            const msg = err?.message ?? '';
-            if (msg.includes('No vault data')) {
-                setSyncActionMsg('No data on server for this account. Make sure sync is enabled on your other device and the email matches.');
-            } else if (msg.includes('HMAC') || msg.includes('decrypt')) {
-                setSyncActionMsg('Decryption failed — the master password on this device does not match the one used to push the vault.');
+            const msg: string = err?.message ?? '';
+            if (msg.includes('No vault data') || msg.includes('not_found')) {
+                setSyncActionMsg('No vault found on server for this email. Open Settings on your other device and tap “Sync Now” to push your data first.');
+            } else if (msg.includes('HMAC') || msg.includes('tamper') || msg.includes('Wrong master')) {
+                setSyncActionMsg('Wrong master password — make sure you use the SAME password as on the device that created the vault.');
+            } else if (msg.includes('decrypt') || msg.includes('Decryption')) {
+                setSyncActionMsg('Decryption failed — wrong master password or corrupted data.');
+            } else if (msg.includes('kdf_salt') || msg.includes('older version')) {
+                setSyncActionMsg(msg); // Show the exact upgrade instruction
             } else {
-                setSyncActionMsg(msg || 'Pull failed. Is the server awake? Try again in 30 seconds.');
+                setSyncActionMsg(msg || 'Server unreachable. Wait 30s for it to wake up, then try again.');
             }
         }
     }
@@ -599,27 +624,60 @@ export function SettingsPage() {
                                             {syncPushState === 'pushing' ? 'Pushing…' : 'Sync Now (Push to Cloud)'}
                                         </button>
 
-                                        {/* Force Pull */}
+                                        {/* Restore from Cloud — uses vault_restore_from_sync which reads kdf_salt from server payload */}
                                         <div style={{
-                                            background: 'rgba(255,140,0,0.07)',
-                                            border: '1px solid rgba(255,140,0,0.25)',
+                                            background: 'rgba(99,102,241,0.07)',
+                                            border: '1px solid rgba(99,102,241,0.25)',
                                             borderRadius: 'var(--radius-md)',
                                             padding: '12px 14px',
                                         }}>
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-warning)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <AlertTriangle size={13} /> Pull from Cloud
+                                            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#818cf8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <Download size={13} /> Restore from Cloud
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-                                                Downloads the latest vault from the server and merges it into this device.
-                                                Use this if you just set up sync on a new device and your passwords aren't showing.
+                                                Use this on a <strong>new device</strong> to download your vault from the server.
+                                                Enter the <strong>same master password</strong> you used on your other device.
                                             </div>
-                                            <button className='btn btn-secondary'
-                                                style={{ width: '100%', borderColor: 'rgba(255,140,0,0.3)' }}
-                                                disabled={syncPullState === 'pulling'}
-                                                onClick={handleForcePull}>
-                                                <Download size={14} className={syncPullState === 'pulling' ? 'spin' : ''} />
-                                                {syncPullState === 'pulling' ? 'Pulling from server… (may take 30s)' : 'Pull from Cloud'}
-                                            </button>
+                                            {!showRestoreForm ? (
+                                                <button className='btn btn-secondary'
+                                                    style={{ width: '100%', borderColor: 'rgba(99,102,241,0.35)' }}
+                                                    onClick={() => { setShowRestoreForm(true); setSyncActionMsg(''); }}>
+                                                    <Download size={14} /> Restore from Cloud
+                                                </button>
+                                            ) : (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                                                        <input
+                                                            autoFocus
+                                                            type={showRestorePw ? 'text' : 'password'}
+                                                            className='form-input font-mono'
+                                                            placeholder='Master password from your other device…'
+                                                            value={restorePw}
+                                                            onChange={(e) => setRestorePw(e.target.value)}
+                                                            onKeyDown={async (e) => { if (e.key === 'Enter' && restorePw) { e.preventDefault(); await handleRestoreFromCloud(); } }}
+                                                            style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
+                                                        />
+                                                        <button type='button' tabIndex={-1}
+                                                            onClick={() => setShowRestorePw(v => !v)}
+                                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, flexShrink: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                            {showRestorePw ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <button className='btn btn-primary' style={{ flex: 1 }}
+                                                            disabled={!restorePw || syncPullState === 'pulling'}
+                                                            onClick={handleRestoreFromCloud}>
+                                                            {syncPullState === 'pulling'
+                                                                ? <><div style={{ width: 13, height: 13, border: '2px solid #080c10', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Restoring… (30s)</>
+                                                                : <><Download size={14} />Restore Now</>}
+                                                        </button>
+                                                        <button className='btn btn-secondary'
+                                                            onClick={() => { setShowRestoreForm(false); setRestorePw(''); setSyncActionMsg(''); }}>
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Status message */}
