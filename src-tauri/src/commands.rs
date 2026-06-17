@@ -241,13 +241,13 @@ pub async fn sync_pull(
         let vault = state.vault.lock().map_err(map_err)?;
         let local_version = vault.version();
         eprintln!("[SYNC] pull: server_version={}, local_version={}", server_version, local_version);
-        // Import whenever server is same or newer — covers the "new device" case
-        // where both start at version 0 but server has real data.
-        if server_version >= local_version {
+        // Only import when server is strictly newer — equal versions mean we're in sync.
+        // New-device bootstrap uses vault_restore_from_sync instead (reads kdf_salt from payload).
+        if server_version > local_version {
             vault.import_json(&vault_json).map_err(map_err)?;
             eprintln!("[SYNC] pull: imported {} bytes of vault data", vault_json.len());
         } else {
-            eprintln!("[SYNC] pull: local is newer, skipping import");
+            eprintln!("[SYNC] pull: already up to date (server={}, local={})", server_version, local_version);
         }
     }
 
