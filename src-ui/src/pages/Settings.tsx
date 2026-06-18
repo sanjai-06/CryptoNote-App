@@ -132,17 +132,40 @@ export function SettingsPage() {
         const deviceId = `device-${email.trim().replace(/[^a-z0-9]/gi, '')}`;
         setIsSavingSync(true);
         try {
+            // 1. Configure the sync engine
             await syncConfigure({
                 server_url: serverUrl.trim(),
                 device_id: deviceId,
                 user_id: email.trim(),
             });
-            // Persist to localStorage via store
             setSyncConfig(serverUrl.trim(), email.trim(), true);
             setSyncError('');
-            flash('Sync settings saved ✓');
+
+            // 2. Auto-push local vault to server so other devices can pull it
+            setSyncPushState('pushing');
+            try {
+                await syncPush();
+                setSyncPushState('ok');
+            } catch (pushErr: any) {
+                setSyncPushState('idle');
+                console.warn('[sync] auto-push after save failed:', pushErr?.message);
+            }
+
+            // 3. Auto-pull so this device gets any newer data from other devices
+            setSyncPullState('pulling');
+            try {
+                await syncPull();
+                setSyncPullState('ok');
+                setSyncActionMsg('');
+            } catch {
+                setSyncPullState('idle');
+            }
+
+            flash('Sync enabled — vault synced ✓');
         } catch (err: any) {
-            setSyncError(err?.message || 'Failed to save sync settings. Is the app running?');
+            setSyncError(err?.message || 'Failed to save sync settings.');
+            setSyncPushState('idle');
+            setSyncPullState('idle');
         }
         setIsSavingSync(false);
     }
