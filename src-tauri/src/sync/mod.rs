@@ -127,10 +127,11 @@ impl SyncEngine {
     /// Build a TLS-pinned HTTP client.
     fn build_client(cert_pem: Option<&str>) -> Result<Client> {
         let mut builder = ClientBuilder::new()
-            .timeout(Duration::from_secs(70))        // Render free tier can take 50s to wake
-            .connect_timeout(Duration::from_secs(65))
+            .timeout(Duration::from_secs(90))        // enough for Render wake (50s) + response
+            .connect_timeout(Duration::from_secs(30))
             .use_rustls_tls()
             .min_tls_version(reqwest::tls::Version::TLS_1_2);
+
 
         if let Some(pem) = cert_pem {
             // Custom cert pinning: disable system roots, use only the provided cert
@@ -357,35 +358,62 @@ impl SyncEngine {
         let pending_ref = self.pending.clone();
         *status_ref.lock().unwrap() = SyncStatus::Syncing;
 
-        // --- All locks released. Return an owned, Send-safe async block ---
         async move {
             let payload = payload?;
             let client = Self::build_client(tls_cert.as_deref())?;
-            let mut req = client.post(format!("{}/api/vault/push", server_url)).json(&payload);
-            if let Some(token) = auth_token { req = req.bearer_auth(token); }
 
-            let response = req.send().await.map_err(|e| {
-                *status_ref.lock().unwrap() = SyncStatus::Offline;
-                anyhow!("Network error: {}", e)
-            })?;
+            // Retry up to 3 times on 503 (Render free-tier cold start ~30-50s)
+            const MAX_RETRIES: u32 = 3;
+            const RETRY_DELAY_SECS: u64 = 25;
 
-            if !response.status().is_success() {
-                let err = format!("Server error: {}", response.status());
-                *status_ref.lock().unwrap() = SyncStatus::Error(err.clone());
-                return Err(anyhow!("{}", err));
+            for attempt in 0..=MAX_RETRIES {
+                if attempt > 0 {
+                    eprintln!("[SYNC] push: server waking up, retrying in {}s (attempt {}/{})",
+                        RETRY_DELAY_SECS, attempt, MAX_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+                }
+
+                let mut req = client.post(format!("{}/api/vault/push", server_url)).json(&payload);
+                if let Some(ref token) = auth_token { req = req.bearer_auth(token); }
+
+                let response = match req.send().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        *status_ref.lock().unwrap() = SyncStatus::Offline;
+                        return Err(anyhow!("Network error: {}", e));
+                    }
+                };
+
+                // 503 = Render is waking up the service — retry after delay
+                if response.status().as_u16() == 503 {
+                    eprintln!("[SYNC] push: got 503 (server starting up)");
+                    if attempt < MAX_RETRIES { continue; }
+                    let err = "Server is starting up. Please wait 30 seconds and try again.".to_string();
+                    *status_ref.lock().unwrap() = SyncStatus::Error(err.clone());
+                    return Err(anyhow!("{}", err));
+                }
+
+                if !response.status().is_success() {
+                    let err = format!("Server error: {}", response.status());
+                    *status_ref.lock().unwrap() = SyncStatus::Error(err.clone());
+                    return Err(anyhow!("{}", err));
+                }
+
+                let sync_resp: SyncResponse = response.json().await
+                    .map_err(|e| anyhow!("Invalid server response: {}", e))?;
+
+                let new_status = if sync_resp.status == "conflict" {
+                    SyncStatus::Conflict { server_version: sync_resp.server_version.unwrap_or(0), local_version }
+                } else {
+                    SyncStatus::Synced { at: chrono::Utc::now().timestamp() }
+                };
+                *status_ref.lock().unwrap() = new_status.clone();
+                *pending_ref.lock().unwrap() = None;
+                eprintln!("[SYNC] push: ok on attempt {}", attempt);
+                return Ok(new_status);
             }
 
-            let sync_resp: SyncResponse = response.json().await
-                .map_err(|e| anyhow!("Invalid server response: {}", e))?;
-
-            let new_status = if sync_resp.status == "conflict" {
-                SyncStatus::Conflict { server_version: sync_resp.server_version.unwrap_or(0), local_version }
-            } else {
-                SyncStatus::Synced { at: chrono::Utc::now().timestamp() }
-            };
-            *status_ref.lock().unwrap() = new_status.clone();
-            *pending_ref.lock().unwrap() = None;
-            Ok(new_status)
+            unreachable!()
         }
     }
 
@@ -405,36 +433,61 @@ impl SyncEngine {
         async move {
             let user_id = user_id.ok_or_else(|| anyhow!("Not authenticated – no user_id in sync config"))?;
             let client = Self::build_client(tls_cert.as_deref())?;
-            let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
-            if let Some(token) = auth_token { req = req.bearer_auth(token); }
 
-            let response = req.send().await.map_err(|_| anyhow!("Network unavailable"))?;
-            let sync_resp: SyncResponse = response.json().await
-                .map_err(|e| anyhow!("Invalid response: {}", e))?;
+            const MAX_RETRIES: u32 = 3;
+            const RETRY_DELAY_SECS: u64 = 25;
 
-            let payload = sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server"))?;
+            for attempt in 0..=MAX_RETRIES {
+                if attempt > 0 {
+                    eprintln!("[SYNC] pull: server waking up, retrying in {}s (attempt {}/{})",
+                        RETRY_DELAY_SECS, attempt, MAX_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+                }
 
-            // Support both legacy (no kdf_salt) and new (with kdf_salt) payloads
-            let hmac_input = if payload.kdf_salt.is_empty() {
-                format!("{}:{}:{}:{}:{}:{}",
-                    payload.user_id, payload.device_id, payload.version,
-                    payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext)
-            } else {
-                format!("{}:{}:{}:{}:{}:{}:{}",
-                    payload.user_id, payload.device_id, payload.version,
-                    payload.timestamp, payload.sequence,
-                    payload.kdf_salt, payload.encrypted_vault.ciphertext)
-            };
-            let expected = base64::engine::general_purpose::STANDARD
-                .decode(&payload.hmac).map_err(|_| anyhow!("Invalid HMAC encoding"))?;
-            if !crate::crypto::verify_hmac(&hmac_key, hmac_input.as_bytes(), &expected) {
-                return Err(anyhow!("HMAC verification failed"));
+                let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
+                if let Some(ref token) = auth_token { req = req.bearer_auth(token); }
+
+                let response = match req.send().await {
+                    Ok(r) => r,
+                    Err(e) => return Err(anyhow!("Network unavailable: {}", e)),
+                };
+
+                // 503 = Render waking service
+                if response.status().as_u16() == 503 {
+                    eprintln!("[SYNC] pull: got 503 (server starting up)");
+                    if attempt < MAX_RETRIES { continue; }
+                    return Err(anyhow!("Server is starting up. Please wait 30 seconds and try again."));
+                }
+
+                let sync_resp: SyncResponse = response.json().await
+                    .map_err(|e| anyhow!("Invalid response: {}", e))?;
+
+                let payload = sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server"))?;
+
+                let hmac_input = if payload.kdf_salt.is_empty() {
+                    format!("{}:{}:{}:{}:{}:{}",
+                        payload.user_id, payload.device_id, payload.version,
+                        payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext)
+                } else {
+                    format!("{}:{}:{}:{}:{}:{}:{}",
+                        payload.user_id, payload.device_id, payload.version,
+                        payload.timestamp, payload.sequence,
+                        payload.kdf_salt, payload.encrypted_vault.ciphertext)
+                };
+                let expected = base64::engine::general_purpose::STANDARD
+                    .decode(&payload.hmac).map_err(|_| anyhow!("Invalid HMAC encoding"))?;
+                if !crate::crypto::verify_hmac(&hmac_key, hmac_input.as_bytes(), &expected) {
+                    return Err(anyhow!("HMAC verification failed"));
+                }
+
+                let vault_json = crate::crypto::decrypt_string(&sync_key, &payload.encrypted_vault)
+                    .map_err(|_| anyhow!("Failed to decrypt pulled vault"))?;
+                *status_ref.lock().unwrap() = SyncStatus::Synced { at: chrono::Utc::now().timestamp() };
+                eprintln!("[SYNC] pull: ok on attempt {}", attempt);
+                return Ok((vault_json, payload.version));
             }
 
-            let vault_json = crate::crypto::decrypt_string(&sync_key, &payload.encrypted_vault)
-                .map_err(|_| anyhow!("Failed to decrypt pulled vault"))?;
-            *status_ref.lock().unwrap() = SyncStatus::Synced { at: chrono::Utc::now().timestamp() };
-            Ok((vault_json, payload.version))
+            unreachable!()
         }
     }
 
@@ -450,12 +503,37 @@ impl SyncEngine {
 
         async move {
             let client = Self::build_client(tls_cert.as_deref())?;
-            let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
-            if let Some(token) = auth_token { req = req.bearer_auth(token); }
-            let response = req.send().await.map_err(|_| anyhow!("Network unavailable"))?;
-            let sync_resp: SyncResponse = response.json().await
-                .map_err(|e| anyhow!("Invalid response: {}", e))?;
-            sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server for this account"))
+
+            const MAX_RETRIES: u32 = 3;
+            const RETRY_DELAY_SECS: u64 = 25;
+
+            for attempt in 0..=MAX_RETRIES {
+                if attempt > 0 {
+                    eprintln!("[SYNC] fetch_payload: server waking up, retrying in {}s (attempt {}/{})",
+                        RETRY_DELAY_SECS, attempt, MAX_RETRIES);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+                }
+
+                let mut req = client.get(format!("{}/api/vault/pull/{}", server_url, user_id));
+                if let Some(ref token) = auth_token { req = req.bearer_auth(token); }
+
+                let response = match req.send().await {
+                    Ok(r) => r,
+                    Err(e) => return Err(anyhow!("Network unavailable: {}", e)),
+                };
+
+                if response.status().as_u16() == 503 {
+                    eprintln!("[SYNC] fetch_payload: got 503 (server starting up)");
+                    if attempt < MAX_RETRIES { continue; }
+                    return Err(anyhow!("Server is starting up. Please wait 30 seconds and try again."));
+                }
+
+                let sync_resp: SyncResponse = response.json().await
+                    .map_err(|e| anyhow!("Invalid response: {}", e))?;
+                return sync_resp.payload.ok_or_else(|| anyhow!("No vault data on server for this account"));
+            }
+
+            unreachable!()
         }
     }
 
