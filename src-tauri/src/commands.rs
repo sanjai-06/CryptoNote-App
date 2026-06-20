@@ -157,6 +157,43 @@ pub fn sync_get_status(state: State<'_, AppState>) -> CmdResult<SyncStatus> {
     Ok(engine.get_status())
 }
 
+/// Ping the sync server and return a diagnostic string.
+/// Used by the Settings UI "Test Connection" button.
+#[tauri::command]
+pub async fn sync_ping(state: State<'_, AppState>) -> CmdResult<String> {
+    let (server_url, tls_cert) = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        let cfg = engine.get_config();
+        (cfg.server_url, cfg.tls_cert_pem)
+    };
+
+    let client = crate::sync::SyncEngine::build_client_pub(tls_cert.as_deref())
+        .map_err(map_err)?;
+
+    match client.get(&server_url).send().await {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            if status == 503 {
+                Ok(format!("Server is waking up (503) — retry in ~30s"))
+            } else {
+                Ok(format!("Connected ✓ (HTTP {})", status))
+            }
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("dns") || msg.contains("resolve") {
+                Err(format!("DNS error — cannot resolve server hostname. Check your internet connection."))
+            } else if msg.contains("tls") || msg.contains("ssl") || msg.contains("certificate") {
+                Err(format!("TLS error: {}", msg))
+            } else if msg.contains("timeout") || msg.contains("timed out") {
+                Err(format!("Connection timed out — server may be starting, try again in 30s"))
+            } else {
+                Err(format!("Network error: {}", msg))
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn sync_register(
     email: String,

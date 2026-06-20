@@ -195,6 +195,7 @@ pub fn run() {
             // Sync
             sync_configure,
             sync_get_status,
+            sync_ping,
             sync_register,
             sync_push,
             sync_pull,

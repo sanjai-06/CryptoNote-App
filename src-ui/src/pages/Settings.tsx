@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, Clock, Cloud, Smartphone, Lock,
     Key, AlertTriangle, ChevronLeft, RefreshCw, Palette,
-    Fingerprint, Eye, EyeOff, Download, CheckCircle2
+    Fingerprint, Eye, EyeOff, Download, CheckCircle2, Wifi
 } from 'lucide-react';
 import logoImg from '../assets/logo-120.png';
 import { SyncStatus } from '../components/SyncStatus';
@@ -58,6 +58,8 @@ export function SettingsPage() {
     const [showRestoreForm, setShowRestoreForm] = useState(false);
     const [restorePw, setRestorePw]   = useState('');
     const [showRestorePw, setShowRestorePw] = useState(false);
+    const [pingState, setPingState]   = useState<'idle'|'pinging'|'ok'|'error'>('idle');
+    const [pingMsg,   setPingMsg]     = useState('');
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
     const [bioEnrollPw, setBioEnrollPw]       = useState('');
     const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
@@ -627,6 +629,51 @@ export function SettingsPage() {
                                 }}>
                                     🔒 Your vault is encrypted before leaving this device. The server stores only an encrypted blob — it cannot read your data.
                                 </div>
+
+                                {/* Test Connection */}
+                                <button className='btn btn-ghost'
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem' }}
+                                    disabled={pingState === 'pinging'}
+                                    onClick={async () => {
+                                        setPingState('pinging');
+                                        setPingMsg('');
+                                        // Configure engine first with current inputs
+                                        try {
+                                            await syncConfigure({
+                                                server_url: serverUrl.trim(),
+                                                device_id: `device-${email.trim().replace(/[^a-z0-9]/gi, '')}`,
+                                                user_id: email.trim(),
+                                            });
+                                        } catch { /* ignore */ }
+                                        try {
+                                            const { invoke } = await import('@tauri-apps/api/core');
+                                            const result = await invoke<string>('sync_ping');
+                                            setPingState('ok');
+                                            setPingMsg(result);
+                                        } catch (err: any) {
+                                            setPingState('error');
+                                            setPingMsg(err?.message ?? String(err));
+                                        }
+                                    }}>
+                                    <Wifi size={14} className={pingState === 'pinging' ? 'spin' : ''} />
+                                    {pingState === 'pinging' ? 'Testing…' : 'Test Connection'}
+                                </button>
+                                {pingMsg && (
+                                    <div style={{
+                                        padding: '8px 12px',
+                                        borderRadius: 'var(--radius-md)',
+                                        fontSize: '0.78rem',
+                                        display: 'flex', alignItems: 'flex-start', gap: 6,
+                                        background: pingState === 'error' ? 'rgba(239,68,68,0.08)' : 'rgba(0,229,160,0.08)',
+                                        border: `1px solid ${pingState === 'error' ? 'var(--border-danger)' : 'var(--border-accent)'}`,
+                                        color: pingState === 'error' ? 'var(--color-danger)' : 'var(--color-success)',
+                                    }}>
+                                        {pingState === 'error'
+                                            ? <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                            : <CheckCircle2 size={12} style={{ flexShrink: 0, marginTop: 1 }} />}
+                                        {pingMsg}
+                                    </div>
+                                )}
 
                                 <button className='btn btn-primary' onClick={handleSaveSync} disabled={isSavingSync}>
                                     <Cloud size={14} /> {isSavingSync ? 'Saving…' : 'Save Sync Settings'}

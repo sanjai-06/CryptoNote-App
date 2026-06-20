@@ -109,8 +109,17 @@ impl SyncEngine {
         self.status.lock().unwrap().clone()
     }
 
+    pub fn get_config(&self) -> SyncConfig {
+        self.config.lock().unwrap().clone()
+    }
+
     pub fn update_config(&self, config: SyncConfig) {
         *self.config.lock().unwrap() = config;
+    }
+
+    /// Public wrapper around build_client for use by commands.
+    pub fn build_client_pub(cert_pem: Option<&str>) -> Result<reqwest::Client> {
+        Self::build_client(cert_pem)
     }
 
     /// Queue vault data for sync (used when offline).
@@ -128,7 +137,7 @@ impl SyncEngine {
     fn build_client(cert_pem: Option<&str>) -> Result<Client> {
         let mut builder = ClientBuilder::new()
             .timeout(Duration::from_secs(90))        // enough for Render wake (50s) + response
-            .connect_timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(65)) // Android cellular can be slow to establish TLS
             .use_rustls_tls()
             .min_tls_version(reqwest::tls::Version::TLS_1_2);
 
