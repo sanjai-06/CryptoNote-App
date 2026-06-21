@@ -144,6 +144,25 @@ jobs:
       - name: Initialize Tauri Android
         run: npx tauri android init
 
+      - name: Add biometric permissions to AndroidManifest.xml
+        run: |
+          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" \
+            -not -path "*/build/*" | head -1)
+          echo "Found manifest: $MANIFEST"
+          echo "=== Before ==="
+          cat "$MANIFEST"
+
+          if ! grep -q "USE_BIOMETRIC" "$MANIFEST"; then
+            # Add biometric permissions right after <manifest ...>
+            sed -i '/<manifest/a\    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.USE_FINGERPRINT" />' "$MANIFEST"
+            echo "✓ Added USE_BIOMETRIC + USE_FINGERPRINT permissions"
+          else
+            echo "✓ Biometric permissions already present"
+          fi
+
+          echo "=== After ==="
+          cat "$MANIFEST"
+
       - name: Inject app icon into Android mipmap folders
         run: |
           LOGO="src-tauri/icons/icon.png"

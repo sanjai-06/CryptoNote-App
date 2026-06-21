@@ -92,16 +92,32 @@ export function SettingsPage() {
         try {
             const { checkStatus } = await import('@tauri-apps/plugin-biometric');
             const status = await checkStatus();
+            console.log('[biometric] checkStatus:', JSON.stringify(status));
             if (status.isAvailable) {
                 setBioSensorStatus('available');
             } else {
                 const code = status.errorCode ?? '';
-                if (code === 'biometryNotEnrolled')  setBioSensorStatus('notEnrolled');
-                else if (code === 'biometryLockout')  setBioSensorStatus('unavailable');
-                else                                  setBioSensorStatus('notAvailable');
+                // Use exact error codes from plugin API
+                if (code === 'biometryNotEnrolled') {
+                    setBioSensorStatus('notEnrolled');
+                } else if (code === 'biometryLockout') {
+                    setBioSensorStatus('unavailable');
+                } else if (code === 'biometryNotAvailable') {
+                    // Sensor exists but OS says not available — could be a permissions issue
+                    // (missing USE_BIOMETRIC in manifest). Show as notAvailable with hint.
+                    setBioSensorStatus('notAvailable');
+                } else if (code === 'passcodeNotSet') {
+                    // Device has no screen lock set — biometric requires it
+                    setBioSensorStatus('notEnrolled');
+                } else {
+                    // Unknown code — could be a plugin error
+                    setBioSensorStatus('unknown');
+                    console.warn('[biometric] unexpected errorCode:', code, 'error:', status.error);
+                }
             }
-        } catch {
+        } catch (e: any) {
             // Plugin not available on this platform (desktop) — that's fine
+            console.warn('[biometric] checkStatus threw:', e?.message ?? e);
             setBioSensorStatus('unknown');
         }
     }
@@ -437,16 +453,21 @@ export function SettingsPage() {
                             <div>
                                 <div className='settings-row-label'>Sensor Status</div>
                                 <div className='settings-row-desc'>
-                                    {bioSensorStatus === 'available' && 'Fingerprint / Face ID sensor detected and enrolled'}
+                                    {bioSensorStatus === 'available' && 'Fingerprint / Face ID sensor detected and enrolled ✓'}
                                     {bioSensorStatus === 'notEnrolled' && 'Sensor detected but no fingerprints registered in system settings'}
-                                    {bioSensorStatus === 'unavailable' && 'Sensor temporarily unavailable (too many attempts or locked)'}
-                                    {bioSensorStatus === 'notAvailable' && 'No biometric hardware found on this device'}
+                                    {bioSensorStatus === 'unavailable' && 'Sensor temporarily unavailable (too many failed attempts — wait 30s)'}
+                                    {bioSensorStatus === 'notAvailable' && 'Biometric not available — make sure you have fingerprints enrolled in Phone Settings → Security → Fingerprint, then tap ↻'}
                                     {bioSensorStatus === 'checking' && 'Detecting sensor…'}
-                                    {bioSensorStatus === 'unknown' && 'Could not determine sensor status'}
+                                    {bioSensorStatus === 'unknown' && 'Running on desktop or biometric plugin not loaded on this device'}
                                 </div>
                                 {bioSensorStatus === 'notEnrolled' && (
                                     <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)', marginTop: 4 }}>
-                                        → Go to Settings → Security → Fingerprint and add a fingerprint.
+                                        → Phone Settings → Security → Fingerprint → add a fingerprint, then tap ↻ above.
+                                    </div>
+                                )}
+                                {bioSensorStatus === 'notAvailable' && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)', marginTop: 4 }}>
+                                        If you have a fingerprint sensor, try: 1) Update to the latest APK  2) Enroll fingerprint in Phone Settings  3) Tap ↻ to re-check.
                                     </div>
                                 )}
                             </div>
