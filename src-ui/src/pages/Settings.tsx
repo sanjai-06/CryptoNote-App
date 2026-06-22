@@ -58,6 +58,7 @@ export function SettingsPage() {
     const [showRestoreForm, setShowRestoreForm] = useState(false);
     const [restorePw, setRestorePw]   = useState('');
     const [showRestorePw, setShowRestorePw] = useState(false);
+    const [restoreError, setRestoreError]   = useState('');
     const [pingState, setPingState]   = useState<'idle'|'pinging'|'ok'|'error'>('idle');
     const [pingMsg,   setPingMsg]     = useState('');
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
@@ -203,7 +204,7 @@ export function SettingsPage() {
             setTimeout(() => { setSyncPushState('idle'); setSyncActionMsg(''); }, 3000);
         } catch (err: any) {
             setSyncPushState('error');
-            setSyncActionMsg(err?.message ?? 'Push failed. Check your sync settings.');
+            setSyncActionMsg(typeof err === 'string' ? err : (err?.message ?? 'Push failed. Check your sync settings.'));
         }
     }
 
@@ -211,41 +212,34 @@ export function SettingsPage() {
         if (!restorePw.trim()) return;
         setSyncPullState('pulling');
         setSyncActionMsg('');
-        // Use the saved email from store, or the current email input
+        setRestoreError('');
         const userId = email.trim() || syncEmail;
         if (!userId) {
             setSyncPullState('error');
-            setSyncActionMsg('Enter your Account Email in sync settings first.');
+            setRestoreError('Enter your Account Email in sync settings first.');
             return;
         }
         try {
-            // vault_restore_from_sync:
-            // 1. Downloads the encrypted payload from the server
-            // 2. Reads the kdf_salt FROM the payload (not from local vault)
-            // 3. Derives sync keys using password + server kdf_salt
-            // 4. Verifies HMAC + decrypts
-            // 5. Creates local vault with the server's kdf_salt
-            // 6. Imports all entries
             await vaultRestoreFromSync(restorePw.trim(), userId);
             setSyncPullState('ok');
             setSyncActionMsg('Vault restored ✓ All your passwords have been synced to this device.');
             setRestorePw('');
             setShowRestoreForm(false);
-            // Reload vault page to show all imported entries
             setTimeout(() => navigate('/vault'), 1500);
         } catch (err: any) {
             setSyncPullState('error');
-            const msg: string = err?.message ?? '';
+            // Tauri errors are plain strings, NOT Error objects - err?.message is always undefined
+            const msg: string = typeof err === 'string' ? err
+                : (err?.message ?? err?.toString() ?? 'unknown error');
+            console.error('[restore] failed:', msg);
             if (msg.includes('No vault data') || msg.includes('not_found')) {
-                setSyncActionMsg('No vault found on server for this email. Open Settings on your other device and tap “Sync Now” to push your data first.');
+                setRestoreError('No vault found on server for this email. Open Settings on your other device and tap "Sync Now" to push your data first.');
             } else if (msg.includes('HMAC') || msg.includes('tamper') || msg.includes('Wrong master')) {
-                setSyncActionMsg('Wrong master password — make sure you use the SAME password as on the device that created the vault.');
+                setRestoreError('Wrong master password — use the SAME password as on the device that created the vault.');
             } else if (msg.includes('decrypt') || msg.includes('Decryption')) {
-                setSyncActionMsg('Decryption failed — wrong master password or corrupted data.');
-            } else if (msg.includes('kdf_salt') || msg.includes('older version')) {
-                setSyncActionMsg(msg); // Show the exact upgrade instruction
+                setRestoreError('Decryption failed — wrong master password or corrupted vault.');
             } else {
-                setSyncActionMsg(msg || 'Server unreachable. Wait 30s for it to wake up, then try again.');
+                setRestoreError(msg || 'Unknown error. Check the console for details.');
             }
         }
     }
@@ -767,6 +761,21 @@ export function SettingsPage() {
                                                             Cancel
                                                         </button>
                                                     </div>
+                                                    {/* Restore-specific error — always RED, never green */}
+                                                    {restoreError && (
+                                                        <div style={{
+                                                            padding: '8px 12px',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            fontSize: '0.78rem',
+                                                            display: 'flex', alignItems: 'flex-start', gap: 6,
+                                                            background: 'rgba(239,68,68,0.09)',
+                                                            border: '1px solid var(--border-danger)',
+                                                            color: 'var(--color-danger)',
+                                                        }}>
+                                                            <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                                            {restoreError}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
