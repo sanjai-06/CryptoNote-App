@@ -45,22 +45,18 @@ export function SettingsPage() {
 
     const [serverUrl, setServerUrl] = useState(syncServerUrl);
     const [email, setEmail] = useState(syncEmail);
-    const [isSavingSync, setIsSavingSync] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<'idle'|'syncing'|'synced'|'error'>('idle');
+    const [syncMsg, setSyncMsg] = useState('');
+    const [needsRestore, setNeedsRestore] = useState(false);
     const [securityStatus, setSecurityStatus] = useState<{ is_compromised: boolean; findings: string[] } | null>(null);
     const [checkingDevice, setCheckingDevice] = useState(false);
     const [showPwGen, setShowPwGen] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
     const [syncError, setSyncError] = useState('');
 
-    const [syncPullState, setSyncPullState] = useState<'idle'|'pulling'|'ok'|'error'>('idle');
-    const [syncPushState, setSyncPushState] = useState<'idle'|'pushing'|'ok'|'error'>('idle');
-    const [syncActionMsg, setSyncActionMsg] = useState('');
-    const [showRestoreForm, setShowRestoreForm] = useState(false);
     const [restorePw, setRestorePw]   = useState('');
     const [showRestorePw, setShowRestorePw] = useState(false);
     const [restoreError, setRestoreError]   = useState('');
-    const [pingState, setPingState]   = useState<'idle'|'pinging'|'ok'|'error'>('idle');
-    const [pingMsg,   setPingMsg]     = useState('');
     const [showBioEnroll, setShowBioEnroll]   = useState(false);
     const [bioEnrollPw, setBioEnrollPw]       = useState('');
     const [showBioEnrollPw, setShowBioEnrollPw] = useState(false);
@@ -138,112 +134,39 @@ export function SettingsPage() {
         flash('Auto-lock timeout saved ✓');
     }
 
-    async function handleSaveSync() {
-        setSyncError('');
-        if (!email.trim()) {
-            setSyncError('Please enter your Account Email before saving.');
-            return;
-        }
-        if (!serverUrl.trim()) {
-            setSyncError('Server URL is required.');
-            return;
-        }
-        const deviceId = `device-${email.trim().replace(/[^a-z0-9]/gi, '')}`;
-        setIsSavingSync(true);
-        try {
-            // 1. Configure the sync engine
-            await syncConfigure({
-                server_url: serverUrl.trim(),
-                device_id: deviceId,
-                user_id: email.trim(),
-            });
-            setSyncConfig(serverUrl.trim(), email.trim(), true);
-            setSyncError('');
-
-            // 2. Auto-push local vault to server so other devices can pull it
-            setSyncPushState('pushing');
-            try {
-                await syncPush();
-                setSyncPushState('ok');
-            } catch (pushErr: any) {
-                setSyncPushState('idle');
-                console.warn('[sync] auto-push after save failed:', pushErr?.message);
-            }
-
-            // 3. Auto-pull so this device gets any newer data from other devices
-            setSyncPullState('pulling');
-            try {
-                await syncPull();
-                setSyncPullState('ok');
-                setSyncActionMsg('');
-            } catch {
-                setSyncPullState('idle');
-            }
-
-            flash('Sync enabled — vault synced ✓');
-        } catch (err: any) {
-            setSyncError(err?.message || 'Failed to save sync settings.');
-            setSyncPushState('idle');
-            setSyncPullState('idle');
-        }
-        setIsSavingSync(false);
-    }
-
     function flash(msg: string) {
         setSavedMsg(msg);
         setTimeout(() => setSavedMsg(''), 2500);
     }
 
-    async function handleSyncNow() {
-        setSyncPushState('pushing');
-        setSyncActionMsg('');
-        try {
-            await syncPush();
-            setSyncPushState('ok');
-            setSyncActionMsg('Vault pushed to cloud ✓');
-            setTimeout(() => { setSyncPushState('idle'); setSyncActionMsg(''); }, 3000);
-        } catch (err: any) {
-            setSyncPushState('error');
-            setSyncActionMsg(typeof err === 'string' ? err : (err?.message ?? 'Push failed. Check your sync settings.'));
-        }
-    }
-
-    async function handleRestoreFromCloud() {
+        async function handleRestoreFromCloud() {
         if (!restorePw.trim()) return;
-        setSyncPullState('pulling');
-        setSyncActionMsg('');
-        setRestoreError('');
         const userId = email.trim() || syncEmail;
-        if (!userId) {
-            setSyncPullState('error');
-            setRestoreError('Enter your Account Email in sync settings first.');
-            return;
-        }
+        if (!userId) { setRestoreError('Enter your Account Email first.'); return; }
+        setSyncStatus('syncing');
+        setRestoreError('');
         try {
             await vaultRestoreFromSync(restorePw.trim(), userId);
-            setSyncPullState('ok');
-            setSyncActionMsg('Vault restored ✓ All your passwords have been synced to this device.');
+            setSyncStatus('synced');
+            setSyncMsg('Vault restored ✓');
+            setNeedsRestore(false);
             setRestorePw('');
-            setShowRestoreForm(false);
-            setTimeout(() => navigate('/vault'), 1500);
+            setTimeout(() => navigate('/vault'), 1200);
         } catch (err: any) {
-            setSyncPullState('error');
-            // Tauri errors are plain strings, NOT Error objects - err?.message is always undefined
-            const msg: string = typeof err === 'string' ? err
-                : (err?.message ?? err?.toString() ?? 'unknown error');
+            setSyncStatus('error');
+            const msg = typeof err === 'string' ? err : (err?.message ?? err?.toString() ?? 'unknown');
             console.error('[restore] failed:', msg);
             if (msg.includes('No vault data') || msg.includes('not_found')) {
-                setRestoreError('No vault found on server for this email. Open Settings on your other device and tap "Sync Now" to push your data first.');
+                setRestoreError('No vault on server for this email. Push from your other device first.');
             } else if (msg.includes('HMAC') || msg.includes('tamper') || msg.includes('Wrong master')) {
-                setRestoreError('Wrong master password — use the SAME password as on the device that created the vault.');
+                setRestoreError('Wrong master password — use the exact same password as your other device.');
             } else if (msg.includes('decrypt') || msg.includes('Decryption')) {
-                setRestoreError('Decryption failed — wrong master password or corrupted vault.');
+                setRestoreError('Decryption failed — wrong master password?');
             } else {
-                setRestoreError(msg || 'Unknown error. Check the console for details.');
+                setRestoreError(msg || 'Restore failed.');
             }
         }
     }
-
     async function handleLockNow() {
         await vaultLock();
         setLocked(true);
@@ -599,230 +522,157 @@ export function SettingsPage() {
                     </div>
 
                     {/* ── Encrypted Cloud Sync ─────────────────────────── */}
+                    {/* ── Encrypted Cloud Sync ─────────────────────────── */}
                     <div className='settings-section'>
                         <div className='settings-section-title'><Cloud size={13} style={{ display: 'inline', marginRight: 6 }} />Encrypted Cloud Sync</div>
 
+                        {/* Server URL — always visible when sync section shown */}
+                        <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div className='form-group'>
+                                <label className='form-label'>Server URL</label>
+                                <input
+                                    className='form-input'
+                                    value={serverUrl}
+                                    onChange={(e) => setServerUrl(e.target.value)}
+                                    placeholder='https://your-server.com'
+                                />
+                            </div>
+                            <div className='form-group'>
+                                <label className='form-label'>Account Email</label>
+                                <input
+                                    className='form-input'
+                                    type='email'
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder='you@example.com'
+                                />
+                            </div>
+                        </div>
+
+                        {/* Toggle row */}
                         <div className='settings-row'>
                             <div>
-                                <div className='settings-row-label'>Enable sync</div>
-                                <div className='settings-row-desc'>Encrypted vault sync to your server</div>
+                                <div className='settings-row-label'>Enable Sync</div>
+                                <div className='settings-row-desc'>
+                                    {syncStatus === 'syncing' ? 'Syncing…' :
+                                     syncStatus === 'synced'  ? 'Vault synced ✓' :
+                                     syncStatus === 'error'   ? 'Sync error' :
+                                     'Pull from cloud and push your changes'}
+                                </div>
                             </div>
                             <label className='toggle'>
-                                <input type='checkbox' checked={syncEnabled} onChange={(e) => setSyncEnabled(e.target.checked)} />
+                                <input type='checkbox' checked={syncEnabled}
+                                    onChange={async (e) => {
+                                        const enabled = e.target.checked;
+                                        setSyncEnabled(enabled);
+                                        if (!enabled) { setSyncStatus('idle'); setSyncMsg(''); return; }
+
+                                        // Validate inputs
+                                        const url = serverUrl.trim();
+                                        const mail = email.trim();
+                                        if (!url || !mail) {
+                                            setSyncStatus('error');
+                                            setSyncMsg('Enter Server URL and Account Email first.');
+                                            return;
+                                        }
+
+                                        // Configure → push → pull automatically
+                                        setSyncStatus('syncing');
+                                        setSyncMsg('');
+                                        const deviceId = `device-${mail.replace(/[^a-z0-9]/gi, '')}`;
+                                        try {
+                                            await syncConfigure({ server_url: url, device_id: deviceId, user_id: mail });
+                                            setSyncConfig(url, mail, true);
+                                        } catch (err: any) {
+                                            setSyncStatus('error');
+                                            setSyncMsg('Config failed: ' + (typeof err === 'string' ? err : err?.message ?? 'unknown'));
+                                            return;
+                                        }
+
+                                        // Push first (upload current vault to server)
+                                        try { await syncPush(); } catch { /* non-fatal — server may have no changes */ }
+
+                                        // Pull (download any changes from server)
+                                        try {
+                                            await syncPull();
+                                            setSyncStatus('synced');
+                                            setSyncMsg('');
+                                        } catch (pullErr: any) {
+                                            const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
+                                            // Pull failed — likely a new device that needs full restore
+                                            setSyncStatus('error');
+                                            setSyncMsg(msg || 'Pull failed — enter master password below to restore from cloud.');
+                                            setNeedsRestore(true);
+                                        }
+                                    }}
+                                />
                                 <span className='toggle-slider' />
                             </label>
                         </div>
 
-                        {syncEnabled && (
-                            <div style={{ padding: '0 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <div className='form-group'>
-                                    <label className='form-label'>Server URL</label>
-                                    <input
-                                        className='form-input'
-                                        value={serverUrl}
-                                        onChange={(e) => setServerUrl(e.target.value)}
-                                        placeholder='https://your-server.com'
-                                    />
+                        {/* Status message */}
+                        {syncMsg && (
+                            <div style={{
+                                margin: '0 20px 12px',
+                                padding: '8px 12px',
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: '0.78rem',
+                                display: 'flex', alignItems: 'flex-start', gap: 6,
+                                background: syncStatus === 'error' ? 'rgba(239,68,68,0.08)' : 'rgba(0,229,160,0.08)',
+                                border: `1px solid ${syncStatus === 'error' ? 'var(--border-danger)' : 'var(--border-accent)'}`,
+                                color: syncStatus === 'error' ? 'var(--color-danger)' : 'var(--color-success)',
+                            }}>
+                                {syncStatus === 'error'
+                                    ? <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                                    : <CheckCircle2 size={12} style={{ flexShrink: 0, marginTop: 1 }} />}
+                                {syncMsg}
+                            </div>
+                        )}
+
+                        {/* Restore form — shown only when pull fails on a new device */}
+                        {needsRestore && syncEnabled && (
+                            <div style={{ margin: '0 20px 16px', padding: '12px 14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: '0.8rem', color: '#a5b4fc', marginBottom: 8 }}>
+                                    🔑 Enter your master password to restore from cloud
                                 </div>
-                                <div className='form-group'>
-                                    <label className='form-label'>Account Email</label>
-                                    <input
-                                        className='form-input'
-                                        type='email'
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder='you@example.com'
-                                    />
-                                </div>
-                                <div style={{
-                                    background: 'rgba(0,229,160,0.06)',
-                                    border: '1px solid var(--border-accent)',
-                                    borderRadius: 'var(--radius-md)',
-                                    padding: '10px 14px',
-                                    fontSize: '0.8rem',
-                                    color: 'var(--text-secondary)'
-                                }}>
-                                    🔒 Your vault is encrypted before leaving this device. The server stores only an encrypted blob — it cannot read your data.
-                                </div>
-
-                                {/* Test Connection */}
-                                <button className='btn btn-ghost'
-                                    style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem' }}
-                                    disabled={pingState === 'pinging'}
-                                    onClick={async () => {
-                                        setPingState('pinging');
-                                        setPingMsg('');
-                                        // Configure engine first with current inputs
-                                        try {
-                                            await syncConfigure({
-                                                server_url: serverUrl.trim(),
-                                                device_id: `device-${email.trim().replace(/[^a-z0-9]/gi, '')}`,
-                                                user_id: email.trim(),
-                                            });
-                                        } catch { /* ignore */ }
-                                        try {
-                                            const { invoke } = await import('@tauri-apps/api/core');
-                                            const result = await invoke<string>('sync_ping');
-                                            setPingState('ok');
-                                            setPingMsg(result);
-                                        } catch (err: any) {
-                                            setPingState('error');
-                                            setPingMsg(err?.message ?? String(err));
-                                        }
-                                    }}>
-                                    <Wifi size={14} className={pingState === 'pinging' ? 'spin' : ''} />
-                                    {pingState === 'pinging' ? 'Testing…' : 'Test Connection'}
-                                </button>
-                                {pingMsg && (
-                                    <div style={{
-                                        padding: '8px 12px',
-                                        borderRadius: 'var(--radius-md)',
-                                        fontSize: '0.78rem',
-                                        display: 'flex', alignItems: 'flex-start', gap: 6,
-                                        background: pingState === 'error' ? 'rgba(239,68,68,0.08)' : 'rgba(0,229,160,0.08)',
-                                        border: `1px solid ${pingState === 'error' ? 'var(--border-danger)' : 'var(--border-accent)'}`,
-                                        color: pingState === 'error' ? 'var(--color-danger)' : 'var(--color-success)',
-                                    }}>
-                                        {pingState === 'error'
-                                            ? <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-                                            : <CheckCircle2 size={12} style={{ flexShrink: 0, marginTop: 1 }} />}
-                                        {pingMsg}
-                                    </div>
-                                )}
-
-                                <button className='btn btn-primary' onClick={handleSaveSync} disabled={isSavingSync}>
-                                    <Cloud size={14} /> {isSavingSync ? 'Saving…' : 'Save Sync Settings'}
-                                </button>
-
-                                {/* ── Sync action buttons (only when settings are saved) ── */}
-                                {syncServerUrl && syncEmail && (
-                                    <>
-                                        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Sync Actions</div>
-
-                                        {/* Sync Now (push) */}
-                                        <button className='btn btn-secondary'
-                                            disabled={syncPushState === 'pushing'}
-                                            onClick={handleSyncNow}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <RefreshCw size={14} className={syncPushState === 'pushing' ? 'spin' : ''} />
-                                            {syncPushState === 'pushing' ? 'Pushing…' : 'Sync Now (Push to Cloud)'}
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
+                                        <input
+                                            autoFocus
+                                            type={showRestorePw ? 'text' : 'password'}
+                                            className='form-input font-mono'
+                                            placeholder='Master password…'
+                                            value={restorePw}
+                                            onChange={(e) => { setRestorePw(e.target.value); setRestoreError(''); }}
+                                            style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
+                                            onKeyDown={async (e) => { if (e.key === 'Enter' && restorePw) { e.preventDefault(); await handleRestoreFromCloud(); } }}
+                                        />
+                                        <button type='button' tabIndex={-1} onClick={() => setShowRestorePw(v => !v)}
+                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, flexShrink: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                            {showRestorePw ? <EyeOff size={13} /> : <Eye size={13} />}
                                         </button>
-
-                                        {/* Restore from Cloud — uses vault_restore_from_sync which reads kdf_salt from server payload */}
-                                        <div style={{
-                                            background: 'rgba(99,102,241,0.07)',
-                                            border: '1px solid rgba(99,102,241,0.25)',
-                                            borderRadius: 'var(--radius-md)',
-                                            padding: '12px 14px',
-                                        }}>
-                                            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#818cf8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <Download size={13} /> Restore from Cloud
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-                                                Use this on a <strong>new device</strong> to download your vault from the server.
-                                                Enter the <strong>same master password</strong> you used on your other device.
-                                            </div>
-                                            {!showRestoreForm ? (
-                                                <button className='btn btn-secondary'
-                                                    style={{ width: '100%', borderColor: 'rgba(99,102,241,0.35)' }}
-                                                    onClick={() => { setShowRestoreForm(true); setSyncActionMsg(''); }}>
-                                                    <Download size={14} /> Restore from Cloud
-                                                </button>
-                                            ) : (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                                                        <input
-                                                            autoFocus
-                                                            type={showRestorePw ? 'text' : 'password'}
-                                                            className='form-input font-mono'
-                                                            placeholder='Master password from your other device…'
-                                                            value={restorePw}
-                                                            onChange={(e) => setRestorePw(e.target.value)}
-                                                            onKeyDown={async (e) => { if (e.key === 'Enter' && restorePw) { e.preventDefault(); await handleRestoreFromCloud(); } }}
-                                                            style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
-                                                        />
-                                                        <button type='button' tabIndex={-1}
-                                                            onClick={() => setShowRestorePw(v => !v)}
-                                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, flexShrink: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 var(--radius-md) var(--radius-md) 0', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                                                            {showRestorePw ? <EyeOff size={14} /> : <Eye size={14} />}
-                                                        </button>
-                                                    </div>
-                                                    <div style={{ display: 'flex', gap: 8 }}>
-                                                        <button className='btn btn-primary' style={{ flex: 1 }}
-                                                            disabled={!restorePw || syncPullState === 'pulling'}
-                                                            onClick={handleRestoreFromCloud}>
-                                                            {syncPullState === 'pulling'
-                                                                ? <><div style={{ width: 13, height: 13, border: '2px solid #080c10', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Restoring… (30s)</>
-                                                                : <><Download size={14} />Restore Now</>}
-                                                        </button>
-                                                        <button className='btn btn-secondary'
-                                                            onClick={() => { setShowRestoreForm(false); setRestorePw(''); setSyncActionMsg(''); }}>
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                    {/* Restore-specific error — always RED, never green */}
-                                                    {restoreError && (
-                                                        <div style={{
-                                                            padding: '8px 12px',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            fontSize: '0.78rem',
-                                                            display: 'flex', alignItems: 'flex-start', gap: 6,
-                                                            background: 'rgba(239,68,68,0.09)',
-                                                            border: '1px solid var(--border-danger)',
-                                                            color: 'var(--color-danger)',
-                                                        }}>
-                                                            <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-                                                            {restoreError}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Status message */}
-                                        {syncActionMsg && (
-                                            <div style={{
-                                                padding: '10px 14px',
-                                                borderRadius: 'var(--radius-md)',
-                                                fontSize: '0.8rem',
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: 8,
-                                                background: (syncPullState === 'error' || syncPushState === 'error')
-                                                    ? 'rgba(239,68,68,0.08)' : 'rgba(0,229,160,0.08)',
-                                                border: `1px solid ${
-                                                    (syncPullState === 'error' || syncPushState === 'error')
-                                                    ? 'var(--border-danger)' : 'var(--border-accent)'}`,
-                                                color: (syncPullState === 'error' || syncPushState === 'error')
-                                                    ? 'var(--color-danger)' : 'var(--color-success)',
-                                            }}>
-                                                {(syncPullState === 'error' || syncPushState === 'error')
-                                                    ? <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                                                    : <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
-                                                {syncActionMsg}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-
-                                {syncError && (
-                                    <div style={{
-                                        background: 'rgba(239,68,68,0.08)',
-                                        border: '1px solid var(--border-danger)',
-                                        borderRadius: 'var(--radius-md)',
-                                        padding: '8px 12px',
-                                        fontSize: '0.8rem',
-                                        color: 'var(--color-danger)',
-                                    }}>
-                                        ⚠️ {syncError}
+                                    </div>
+                                    <button className='btn btn-primary'
+                                        disabled={!restorePw || syncStatus === 'syncing'}
+                                        onClick={handleRestoreFromCloud}
+                                        style={{ whiteSpace: 'nowrap' }}>
+                                        {syncStatus === 'syncing' ? 'Restoring…' : 'Restore'}
+                                    </button>
+                                </div>
+                                {restoreError && (
+                                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--color-danger)', display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+                                        <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{restoreError}
                                     </div>
                                 )}
                             </div>
                         )}
-                    </div>
 
-                    {/* ── Password Generator ───────────────────────────── */}
+                        <div style={{ padding: '0 20px 16px' }}>
+                            <div style={{ background: 'rgba(0,229,160,0.06)', border: '1px solid var(--border-accent)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                🔒 Vault is encrypted on-device. The server stores only an encrypted blob.
+                            </div>
+                        </div>
+                    </div>
                     <div className='settings-section'>
                         <div className='settings-section-title'><Key size={13} style={{ display: 'inline', marginRight: 6 }} />Password Generator</div>
                         <div className='settings-row' onClick={() => setShowPwGen(!showPwGen)} style={{ cursor: 'pointer' }}>
