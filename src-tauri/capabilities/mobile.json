@@ -7,6 +7,12 @@
         "main"
     ],
     "permissions": [
+        "core:default",
+        "dialog:default",
+        "fs:default",
+        "fs:allow-write-text-file",
+        "notification:default",
+        "os:default",
         "biometric:allow-authenticate",
         "biometric:allow-status"
     ]

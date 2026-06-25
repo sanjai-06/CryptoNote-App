@@ -146,19 +146,30 @@ jobs:
 
       - name: Add biometric permissions to AndroidManifest.xml
         run: |
-          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" \
-            -not -path "*/build/*" | head -1)
-          echo "Found manifest: $MANIFEST"
+          # Use the definitive app manifest (not the one inside build/ dirs)
+          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          if [ ! -f "$MANIFEST" ]; then
+            MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -not -path "*/build/*" | head -1)
+          fi
+          echo "Patching: $MANIFEST"
           echo "=== Before ==="
           cat "$MANIFEST"
 
-          if ! grep -q "USE_BIOMETRIC" "$MANIFEST"; then
-            # Add biometric permissions right after <manifest ...>
-            sed -i '/<manifest/a\    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.USE_FINGERPRINT" />' "$MANIFEST"
-            echo "✓ Added USE_BIOMETRIC + USE_FINGERPRINT permissions"
-          else
-            echo "✓ Biometric permissions already present"
-          fi
+          python3 << PYEOF
+import re
+path = "$MANIFEST"
+with open(path) as f:
+    content = f.read()
+perms = ["android.permission.USE_BIOMETRIC", "android.permission.USE_FINGERPRINT"]
+for p in perms:
+    if p not in content:
+        content = re.sub(r'(<manifest[^>]*>)', r'\1\n    <uses-permission android:name="' + p + r'" />', content, count=1)
+        print("Added: " + p)
+    else:
+        print("Already present: " + p)
+with open(path, "w") as f:
+    f.write(content)
+PYEOF
 
           echo "=== After ==="
           cat "$MANIFEST"
