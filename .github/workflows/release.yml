@@ -146,32 +146,14 @@ jobs:
 
       - name: Add biometric permissions to AndroidManifest.xml
         run: |
-          # Use the definitive app manifest (not the one inside build/ dirs)
           MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           if [ ! -f "$MANIFEST" ]; then
             MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -not -path "*/build/*" | head -1)
           fi
-          echo "Patching: $MANIFEST"
-          echo "=== Before ==="
-          cat "$MANIFEST"
-
-          python3 << PYEOF
-import re
-path = "$MANIFEST"
-with open(path) as f:
-    content = f.read()
-perms = ["android.permission.USE_BIOMETRIC", "android.permission.USE_FINGERPRINT"]
-for p in perms:
-    if p not in content:
-        content = re.sub(r'(<manifest[^>]*>)', r'\1\n    <uses-permission android:name="' + p + r'" />', content, count=1)
-        print("Added: " + p)
-    else:
-        print("Already present: " + p)
-with open(path, "w") as f:
-    f.write(content)
-PYEOF
-
-          echo "=== After ==="
+          echo "Patching manifest: $MANIFEST"
+          echo "aW1wb3J0IHN5cwpwYXRoID0gc3lzLmFyZ3ZbMV0Kd2l0aCBvcGVuKHBhdGgpIGFzIGY6CiAgICBjb250ZW50ID0gZi5yZWFkKCkKdGFnX3N0YXJ0ID0gY29udGVudC5maW5kKCI8bWFuaWZlc3QiKQp0YWdfZW5kID0gY29udGVudC5maW5kKCI+IiwgdGFnX3N0YXJ0KSArIDEKaW5zZXJ0ID0gIiIKZm9yIHAgaW4gWyJhbmRyb2lkLnBlcm1pc3Npb24uVVNFX0JJT01FVFJJQyIsICJhbmRyb2lkLnBlcm1pc3Npb24uVVNFX0ZJTkdFUlBSSU5UIl06CiAgICBpZiBwIG5vdCBpbiBjb250ZW50OgogICAgICAgIGluc2VydCArPSAiCiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iIiArIHAgKyAiIiAvPiIKICAgICAgICBwcmludCgiQWRkZWQ6ICIgKyBwKQogICAgZWxzZToKICAgICAgICBwcmludCgiQWxyZWFkeSBwcmVzZW50OiAiICsgcCkKaWYgaW5zZXJ0OgogICAgY29udGVudCA9IGNvbnRlbnRbOnRhZ19lbmRdICsgaW5zZXJ0ICsgY29udGVudFt0YWdfZW5kOl0KICAgIHdpdGggb3BlbihwYXRoLCAidyIpIGFzIGY6CiAgICAgICAgZi53cml0ZShjb250ZW50KQo=" | base64 -d > /tmp/patch_manifest.py
+          python3 /tmp/patch_manifest.py "$MANIFEST"
+          echo "=== Result ==="
           cat "$MANIFEST"
 
       - name: Inject app icon into Android mipmap folders
