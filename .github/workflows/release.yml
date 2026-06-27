@@ -144,17 +144,14 @@ jobs:
       - name: Initialize Tauri Android
         run: npx tauri android init
 
-      - name: Add biometric permissions to AndroidManifest.xml
+      - name: Apply AndroidManifest.xml with biometric permissions
         run: |
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          if [ ! -f "$MANIFEST" ]; then
-            MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -not -path "*/build/*" | head -1)
-          fi
-          echo "Patching manifest: $MANIFEST"
-          echo "aW1wb3J0IHN5cwpwYXRoID0gc3lzLmFyZ3ZbMV0Kd2l0aCBvcGVuKHBhdGgpIGFzIGY6CiAgICBjb250ZW50ID0gZi5yZWFkKCkKdGFnX3N0YXJ0ID0gY29udGVudC5maW5kKCc8bWFuaWZlc3QnKQp0YWdfZW5kID0gY29udGVudC5maW5kKCc+JywgdGFnX3N0YXJ0KSArIDEKaW5zZXJ0ID0gJycKZm9yIHAgaW4gWydhbmRyb2lkLnBlcm1pc3Npb24uVVNFX0JJT01FVFJJQycsICdhbmRyb2lkLnBlcm1pc3Npb24uVVNFX0ZJTkdFUlBSSU5UJ106CiAgICBpZiBwIG5vdCBpbiBjb250ZW50OgogICAgICAgIGluc2VydCArPSAnXG4gICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9IicgKyBwICsgJyIgLz4nCiAgICAgICAgcHJpbnQoJ0FkZGVkOiAnICsgcCkKICAgIGVsc2U6CiAgICAgICAgcHJpbnQoJ0FscmVhZHkgcHJlc2VudDogJyArIHApCmlmIGluc2VydDoKICAgIGNvbnRlbnQgPSBjb250ZW50Wzp0YWdfZW5kXSArIGluc2VydCArIGNvbnRlbnRbdGFnX2VuZDpdCiAgICB3aXRoIG9wZW4ocGF0aCwgJ3cnKSBhcyBmOgogICAgICAgIGYud3JpdGUoY29udGVudCkK" | base64 -d > /tmp/patch_manifest.py
-          python3 /tmp/patch_manifest.py "$MANIFEST"
-          echo "=== Result ==="
-          cat "$MANIFEST"
+          DEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          SRC="src-tauri/android-template/AndroidManifest.xml"
+          echo "Copying committed manifest template → $DEST"
+          cp "$SRC" "$DEST"
+          echo "=== Applied manifest ==="
+          cat "$DEST"
 
       - name: Inject app icon into Android mipmap folders
         run: |
