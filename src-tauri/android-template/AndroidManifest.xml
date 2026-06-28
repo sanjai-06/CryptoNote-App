@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  CryptoNote - Android Manifest
-  This file is the authoritative manifest template committed to source control.
-  The CI workflow copies this to src-tauri/gen/android/app/src/main/AndroidManifest.xml
-  AFTER tauri android init runs, ensuring biometric permissions are always present.
+  CryptoNote - AndroidManifest.xml
+  Committed template — CI copies this after 'tauri android init'
+  to ensure biometric permissions are always present.
+  Package: com.cryptonote.desktop
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    package="com.cryptonote.desktop">
 
-    <!-- Network access for sync -->
+    <!-- Network access for cloud sync -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Biometric authentication (fingerprint / face) -->
+    <!-- Biometric authentication (fingerprint / face unlock) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
@@ -21,12 +21,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
         android:supportsRtl="true"
-        android:hardwareAccelerated="true"
-        android:largeHeap="true"
-        tools:replace="android:allowBackup">
+        android:hardwareAccelerated="true">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:name=".MainActivity"
+            android:name="com.cryptonote.desktop.MainActivity"
             android:label="@string/main_activity_title"
             android:exported="true">
             <intent-filter>
