@@ -589,20 +589,23 @@ export function SettingsPage() {
                                             return;
                                         }
 
-                                        // Push first (upload current vault to server)
-                                        try { await syncPush(); } catch { /* non-fatal — server may have no changes */ }
-
-                                        // Pull (download any changes from server)
-                                        try {
-                                            await syncPull();
+                                        // Pull first — get data from server (never overwrite server data blindly)
+                                        let pullOk = await syncPull().then(() => true).catch(async (pullErr: any) => {
+                                            const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
+                                            // If server has no vault yet → we are the source device, push our vault
+                                            if (msg.toLowerCase().includes('no vault') || msg.toLowerCase().includes('not_found') || msg.toLowerCase().includes('no vault data')) {
+                                                try { await syncPush(); } catch { /* push failed silently */ }
+                                                return true;
+                                            }
+                                            // HMAC / key mismatch → new device that needs full restore
+                                            setSyncStatus('error');
+                                            setSyncMsg(msg || 'Could not verify server vault — enter your master password to restore.');
+                                            setNeedsRestore(true);
+                                            return false;
+                                        });
+                                        if (pullOk) {
                                             setSyncStatus('synced');
                                             setSyncMsg('');
-                                        } catch (pullErr: any) {
-                                            const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
-                                            // Pull failed — likely a new device that needs full restore
-                                            setSyncStatus('error');
-                                            setSyncMsg(msg || 'Pull failed — enter master password below to restore from cloud.');
-                                            setNeedsRestore(true);
                                         }
                                     }}
                                 />

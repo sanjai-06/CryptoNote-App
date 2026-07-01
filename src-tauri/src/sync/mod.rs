@@ -320,13 +320,15 @@ impl SyncEngine {
             .ok_or_else(|| anyhow!("No vault data on server"))?;
 
         // Verify HMAC before decrypting
+        // Format must match push: user_id:device_id:version:timestamp:sequence:kdf_salt:ciphertext
         let hmac_input = format!(
-            "{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}",
             payload.user_id,
             payload.device_id,
             payload.version,
             payload.timestamp,
             payload.sequence,
+            payload.kdf_salt,
             payload.encrypted_vault.ciphertext
         );
         let expected_hmac = base64::engine::general_purpose::STANDARD
