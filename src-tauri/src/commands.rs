@@ -328,27 +328,21 @@ pub async fn vault_restore_from_sync(
     let master_key = derive_master_key(&master_password, &salt_bytes).map_err(map_err)?;
     let keys = derive_subkeys(&master_key).map_err(map_err)?;
 
-    // 3. Verify HMAC.
-    //    Legacy: HMAC input does NOT include kdf_salt.
-    //    New:    HMAC input includes kdf_salt.
-    let hmac_input = if legacy_hmac {
-        format!("{}:{}:{}:{}:{}:{}",
-            payload.user_id, payload.device_id, payload.version,
-            payload.timestamp, payload.sequence, payload.encrypted_vault.ciphertext)
-    } else {
-        format!("{}:{}:{}:{}:{}:{}:{}",
-            payload.user_id, payload.device_id, payload.version,
-            payload.timestamp, payload.sequence,
-            payload.kdf_salt, payload.encrypted_vault.ciphertext)
-    };
+    // 3. Verify HMAC — always use 7-field format matching push:
+    //    user_id:device_id:version:timestamp:sequence:kdf_salt:ciphertext
+    //    (kdf_salt may be empty string for vaults pushed before server fix — that's fine,
+    //     push always included it, just as empty string when salt wasn't stored by server yet)
+    let hmac_input = format!("{}:{}:{}:{}:{}:{}:{}",
+        payload.user_id, payload.device_id, payload.version,
+        payload.timestamp, payload.sequence,
+        payload.kdf_salt, payload.encrypted_vault.ciphertext);
+
     let expected = BASE64_STD
         .decode(&payload.hmac)
         .map_err(|_| map_err(anyhow::anyhow!("Invalid HMAC in server payload")))?;
     if !crate::crypto::verify_hmac(&keys.hmac_key, hmac_input.as_bytes(), &expected) {
         return Err(map_err(anyhow::anyhow!(
-            "Wrong master password. Use the EXACT same password as on your Linux/original device.
-
-If your password is correct, go to Settings → Sync → Sync Now on Linux first, then try Restore again."
+            "Wrong master password. Enter the EXACT password you used on your other device (e.g. Linux/original device), not your mobile account password."
         )));
     }
 

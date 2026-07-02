@@ -24,6 +24,7 @@ const PushSchema = z.object({
     encrypted_vault: EncryptedDataSchema,
     hmac: z.string().min(1),
     sequence: z.number().int().nonnegative(),
+    kdf_salt: z.string().default(''),  // hex-encoded Argon2 salt — required for cross-device restore
 });
 
 // ── Push (upload) encrypted vault ────────────────────────────────────────────
@@ -34,7 +35,7 @@ vaultRouter.post('/push', requireAuth, async (req: Request, res: Response): Prom
         return;
     }
 
-    const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence } = parsed.data;
+    const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence, kdf_salt } = parsed.data;
     const authedUser = (req as any).user as { userId: string };
 
     // Ensure the payload's user_id matches the authenticated user
@@ -69,6 +70,7 @@ vaultRouter.post('/push', requireAuth, async (req: Request, res: Response): Prom
         encrypted_vault,
         hmac,
         sequence,
+        kdf_salt: kdf_salt ?? '',
         size_bytes: sizeBytes,
     });
 
@@ -105,6 +107,7 @@ vaultRouter.get('/pull/:user_id', requireAuth, async (req: Request, res: Respons
             encrypted_vault: blob.encrypted_vault,
             hmac: blob.hmac,
             sequence: blob.sequence,
+            kdf_salt: blob.kdf_salt ?? '',
         },
     });
 });

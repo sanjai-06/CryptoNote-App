@@ -14,6 +14,7 @@ export interface IVaultBlob extends Document {
     };
     hmac: string;             // HMAC-SHA256 of key fields, protects integrity
     sequence: number;         // monotonic sequence for replay protection
+    kdf_salt: string;         // hex-encoded Argon2 salt — needed for cross-device restore
     size_bytes: number;
     created_at: Date;
     updated_at: Date;
@@ -33,6 +34,7 @@ const VaultBlobSchema = new Schema<IVaultBlob>({
     encrypted_vault: { type: EncryptedDataSchema, required: true },
     hmac: { type: String, required: true },
     sequence: { type: Number, required: true },
+    kdf_salt: { type: String, required: false, default: '' },
     size_bytes: { type: Number, required: true },
     created_at: { type: Date, default: Date.now },
     updated_at: { type: Date, default: Date.now },
