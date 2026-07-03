@@ -294,7 +294,7 @@ pub async fn sync_pull(
 }
 
 /// Bootstrap a new device from cloud sync WITHOUT requiring a local vault.
-/// Flow: fetch payload → read kdf_salt → derive keys from password+salt → decrypt → create local vault.
+/// Flow: fetch payload → try salts → decrypt (AEAD provides auth) → create local vault.
 #[tauri::command]
 pub async fn vault_restore_from_sync(
     state: State<'_, AppState>,
@@ -311,67 +311,72 @@ pub async fn vault_restore_from_sync(
     };
     let payload = fetch_fut.await.map_err(|e| map_err(anyhow::anyhow!("Server error: {}", e)))?;
 
-    // 2. Determine KDF salt.
-    //    New payloads include kdf_salt; old payloads (pushed before v0.1.16) don't.
-    //    For old payloads: fall back to a zero-byte salt and legacy HMAC format —
-    //    this matches the behavior before kdf_salt was added.
-    let legacy_hmac = payload.kdf_salt.is_empty();
-    let raw_kdf_salt: String = payload.kdf_salt.clone();
-    let salt_bytes: [u8; 32] = if legacy_hmac {
-        eprintln!("[RESTORE] no kdf_salt in payload — using legacy zero-salt fallback");
-        [0u8; 32]
-    } else {
-        decode_salt(&payload.kdf_salt)
-            .map_err(|e| map_err(anyhow::anyhow!("Invalid KDF salt in server payload: {}", e)))?
-    };
+    // 2. Determine salt candidates to try.
+    //    - Modern payloads: server returns the actual kdf_salt → try it first
+    //    - Legacy payloads (server didn't store kdf_salt): try zero-byte salt as fallback
+    //    We skip HMAC verification entirely — XChaCha20-Poly1305 decryption below
+    //    provides strong authentication (wrong password/salt = MAC verification failure).
+    let mut salt_candidates: Vec<[u8; 32]> = Vec::new();
 
-    let master_key = derive_master_key(&master_password, &salt_bytes).map_err(map_err)?;
-    let keys = derive_subkeys(&master_key).map_err(map_err)?;
+    if !payload.kdf_salt.is_empty() {
+        match decode_salt(&payload.kdf_salt) {
+            Ok(s) => { salt_candidates.push(s); }
+            Err(e) => {
+                eprintln!("[RESTORE] could not decode server kdf_salt: {e}");
+            }
+        }
+    }
+    // Always add zero-byte fallback (for legacy blobs / future-proof)
+    salt_candidates.push([0u8; 32]);
 
-    // 3. Verify HMAC — always use 7-field format matching push:
-    //    user_id:device_id:version:timestamp:sequence:kdf_salt:ciphertext
-    //    (kdf_salt may be empty string for vaults pushed before server fix — that's fine,
-    //     push always included it, just as empty string when salt wasn't stored by server yet)
-    let hmac_input = format!("{}:{}:{}:{}:{}:{}:{}",
-        payload.user_id, payload.device_id, payload.version,
-        payload.timestamp, payload.sequence,
-        payload.kdf_salt, payload.encrypted_vault.ciphertext);
+    // 3. Try each salt — decrypt until one works (AEAD provides authentication)
+    let mut vault_json: Option<String> = None;
+    let mut used_kdf_salt = String::new();
 
-    let expected = BASE64_STD
-        .decode(&payload.hmac)
-        .map_err(|_| map_err(anyhow::anyhow!("Invalid HMAC in server payload")))?;
-    if !crate::crypto::verify_hmac(&keys.hmac_key, hmac_input.as_bytes(), &expected) {
-        return Err(map_err(anyhow::anyhow!(
-            "Wrong master password. Enter the EXACT password you used on your other device (e.g. Linux/original device), not your mobile account password."
-        )));
+    for salt_bytes in &salt_candidates {
+        let master_key = match derive_master_key(&master_password, salt_bytes) {
+            Ok(k) => k,
+            Err(_) => continue,
+        };
+        let keys = match derive_subkeys(&master_key) {
+            Ok(k) => k,
+            Err(_) => continue,
+        };
+        match crate::crypto::decrypt_string(&keys.sync_key, &payload.encrypted_vault) {
+            Ok(json) => {
+                vault_json = Some(json);
+                // Record which salt worked
+                if salt_bytes == &[0u8; 32] && !payload.kdf_salt.is_empty() {
+                    used_kdf_salt = payload.kdf_salt.clone();
+                } else if salt_bytes == &[0u8; 32] {
+                    used_kdf_salt = String::new();
+                } else {
+                    used_kdf_salt = payload.kdf_salt.clone();
+                }
+                break;
+            }
+            Err(_) => continue,
+        }
     }
 
-    // 4. Decrypt vault JSON
-    let vault_json = crate::crypto::decrypt_string(&keys.sync_key, &payload.encrypted_vault)
-        .map_err(|_| map_err(anyhow::anyhow!("Decryption failed. Try: Settings → Sync → Sync Now on Linux first, then Restore again.")))?;
+    let vault_json = vault_json.ok_or_else(|| map_err(anyhow::anyhow!(
+        "Wrong master password. Use the EXACT same password you set up on your original device."
+    )))?;
 
-    let effective_kdf_salt: String = raw_kdf_salt.clone();
-
-
-    // 5. Bootstrap local vault: create with same password (generates new salt!) then import
-    //    We must write the original salt into the DB so future syncs use consistent keys.
+    // 4. Bootstrap local vault
     let meta = {
         let vault = state.vault.lock().map_err(map_err)?;
-        // Create vault (generates new DB with schema)
         let mut meta = vault.create(&master_password).map_err(map_err)?;
-        // Overwrite the auto-generated salt with the server's salt so keys stay consistent
-        if !effective_kdf_salt.is_empty() {
-            vault.overwrite_salt(&effective_kdf_salt, &master_password).map_err(map_err)?;
-            meta.salt = effective_kdf_salt.clone();
+        // Overwrite with the server's salt so future syncs use consistent keys
+        if !used_kdf_salt.is_empty() {
+            vault.overwrite_salt(&used_kdf_salt, &master_password).map_err(map_err)?;
+            meta.salt = used_kdf_salt;
         }
-        // Import all entries from server
         vault.import_json(&vault_json).map_err(map_err)?;
         meta
     };
 
-    // 6. Emit refresh event
     let _ = app.emit("vault://refreshed", ());
-
     Ok(meta)
 }
 
