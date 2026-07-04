@@ -146,12 +146,18 @@ export const syncRegister = (email: string, masterPassword: string): Promise<str
 export const syncPush = (): Promise<void> =>
     isTauri()
         ? tauriInvoke('sync_push')
-        : Promise.resolve(); // browser vault auto-pushes on mutation
+        : Promise.resolve();
 
 export const syncPull = (): Promise<void> =>
     isTauri()
         ? tauriInvoke('sync_pull')
-        : Promise.resolve(); // browser vault pulls on unlock
+        : Promise.resolve();
+
+/** Patch kdf_salt on old server blobs so mobile restore works without re-push. */
+export const syncPatchSalt = (): Promise<void> =>
+    isTauri()
+        ? tauriInvoke('sync_patch_salt').catch(() => {}) as Promise<void>
+        : Promise.resolve();
 
 /** Bootstrap a new device from cloud — uses the server's kdf_salt so keys align. */
 export const vaultRestoreFromSync = (masterPassword: string, userId: string): Promise<VaultMeta> =>

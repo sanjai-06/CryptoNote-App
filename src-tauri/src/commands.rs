@@ -226,7 +226,6 @@ pub async fn sync_push(
     app: tauri::AppHandle,
 ) -> CmdResult<()> {
     eprintln!("[SYNC] sync_push called");
-    // Extract vault data + salt (sync, no await needed)
     let (sync_key, hmac_key, vault_json, local_version, kdf_salt) = {
         let vault = state.vault.lock().map_err(map_err)?;
         let (sk, hk) = vault.get_sync_keys().map_err(|e| {
@@ -237,24 +236,54 @@ pub async fn sync_push(
         let lv = vault.version();
         let salt = vault.get_kdf_salt().unwrap_or_default();
         (sk, hk, vj, lv, salt)
-    }; // vault lock released here
+    };
 
-    eprintln!("[SYNC] vault exported v{}, kdf_salt present={}, building push future...", local_version, !kdf_salt.is_empty());
+    eprintln!("[SYNC] vault exported v{}, kdf_salt present={}", local_version, !kdf_salt.is_empty());
 
     let push_fut = {
         let engine = state.sync_engine.lock().map_err(map_err)?;
-        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt)
+        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt.clone())
     };
 
     match push_fut.await {
         Ok(s) => {
             eprintln!("[SYNC] push ok: {:?}", s);
+            // After push, also patch kdf_salt on existing blob in case server had old blob without it
+            if !kdf_salt.is_empty() {
+                let patch_fut = {
+                    let engine = state.sync_engine.lock().map_err(map_err)?;
+                    engine.patch_kdf_salt_owned(kdf_salt)
+                };
+                if let Err(e) = patch_fut.await {
+                    eprintln!("[SYNC] patch-salt failed (non-fatal): {}", e);
+                }
+            }
             let _ = app.emit("vault://changed", ());
             Ok(())
         }
         Err(e) => { eprintln!("[SYNC] push FAILED: {}", e); Err(map_err(e)) }
     }
 }
+
+/// Called on app start / sync enable to patch kdf_salt on server for old blobs.
+#[tauri::command]
+pub async fn sync_patch_salt(state: State<'_, AppState>) -> CmdResult<()> {
+    let kdf_salt = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        vault.get_kdf_salt().unwrap_or_default()
+    };
+    if kdf_salt.is_empty() { return Ok(()); }
+    let patch_fut = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        engine.patch_kdf_salt_owned(kdf_salt)
+    };
+    patch_fut.await.map_err(|e| {
+        eprintln!("[SYNC] patch-salt: {e}");
+        map_err(e)
+    })?;
+    Ok(())
+}
+
 
 #[tauri::command]
 pub async fn sync_pull(

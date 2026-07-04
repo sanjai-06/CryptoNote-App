@@ -199,6 +199,7 @@ pub fn run() {
             sync_register,
             sync_push,
             sync_pull,
+            sync_patch_salt,
             vault_restore_from_sync,
             // OS security
             security_check_device,

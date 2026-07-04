@@ -13,7 +13,7 @@ import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
 import {
     vaultLock, syncConfigure, securityCheckDevice,
-    setAutoLockTimeout, syncPull, syncPush, vaultRestoreFromSync,
+    setAutoLockTimeout, syncPull, syncPush, syncPatchSalt, vaultRestoreFromSync,
 } from '../hooks/useVault';
 import { isTauri } from '@tauri-apps/api/core';
 import { useVaultStore } from '../store/vaultStore';
@@ -583,6 +583,8 @@ export function SettingsPage() {
                                         try {
                                             await syncConfigure({ server_url: url, device_id: deviceId, user_id: mail });
                                             setSyncConfig(url, mail, true);
+                                            // Patch kdf_salt on any old server blob (non-fatal)
+                                            syncPatchSalt().catch(() => {});
                                         } catch (err: any) {
                                             setSyncStatus('error');
                                             setSyncMsg('Config failed: ' + (typeof err === 'string' ? err : err?.message ?? 'unknown'));

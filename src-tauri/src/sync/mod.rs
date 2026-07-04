@@ -428,6 +428,27 @@ impl SyncEngine {
         }
     }
 
+    /// Patch kdf_salt on old server blobs stored without it.
+    pub fn patch_kdf_salt_owned(
+        &self,
+        kdf_salt: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        let (server_url, auth_token, tls_cert, user_id) = {
+            let cfg = self.config.lock().unwrap();
+            (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone(),
+             cfg.user_id.clone().unwrap_or_default())
+        };
+        async move {
+            let client = Self::build_client(tls_cert.as_deref())?;
+            let body = serde_json::json!({ "user_id": user_id, "kdf_salt": kdf_salt });
+            let mut req = client.post(format!("{}/api/vault/patch-salt", server_url)).json(&body);
+            if let Some(ref token) = auth_token { req = req.bearer_auth(token); }
+            let resp = req.send().await.map_err(|e| anyhow!("patch-salt: {}", e))?;
+            eprintln!("[SYNC] patch-salt → {}", resp.status());
+            Ok(())
+        }
+    }
+
     /// Synchronously extract config for a pull, return a Send-safe future.
     pub fn pull_owned(
         &self,

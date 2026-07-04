@@ -38,47 +38,61 @@ vaultRouter.post('/push', requireAuth, async (req: Request, res: Response): Prom
     const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence, kdf_salt } = parsed.data;
     const authedUser = (req as any).user as { userId: string };
 
-    // Ensure the payload's user_id matches the authenticated user
     if (authedUser.userId !== user_id) {
         res.status(403).json({ error: 'Forbidden: user_id mismatch' });
         return;
     }
 
     const sizeBytes = JSON.stringify(encrypted_vault).length;
-    if (sizeBytes > 10 * 1024 * 1024) { // 10 MB max
+    if (sizeBytes > 10 * 1024 * 1024) {
         res.status(413).json({ error: 'Vault payload too large' });
         return;
     }
 
-    // Version-based conflict resolution
+    // Conflict: server has a STRICTLY NEWER version (not equal — equal allowed for kdf_salt update)
     const existing = await VaultBlob.findOne({ user_id }).sort({ version: -1 });
-    if (existing && existing.version >= version) {
+    if (existing && existing.version > version) {
         res.status(200).json({
             status: 'conflict',
             server_version: existing.version,
-            message: 'Server has a newer version. Pull first, merge locally, then push.',
+            message: 'Server has a newer version. Pull first, then push.',
         });
         return;
     }
 
-    // Upsert: store new encrypted blob
-    await VaultBlob.create({
-        user_id,
-        device_id,
-        version,
-        timestamp,
-        encrypted_vault,
-        hmac,
-        sequence,
-        kdf_salt: kdf_salt ?? '',
-        size_bytes: sizeBytes,
-    });
+    // Upsert: update existing blob for this version, or create new one.
+    // This allows re-push of the same version to update kdf_salt on old blobs.
+    await VaultBlob.findOneAndUpdate(
+        { user_id, version },
+        { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence,
+          kdf_salt: kdf_salt ?? '', size_bytes: sizeBytes },
+        { upsert: true, new: true }
+    );
 
-    res.status(200).json({
-        status: 'synced',
-        server_version: version,
-    });
+    res.status(200).json({ status: 'synced', server_version: version });
 });
+
+// ── Patch kdf_salt on existing blob (called automatically by client after server upgrade) ──
+vaultRouter.post('/patch-salt', requireAuth, async (req: Request, res: Response): Promise<void> => {
+    const { user_id, kdf_salt } = req.body;
+    const authedUser = (req as any).user as { userId: string };
+    if (authedUser.userId !== user_id || !kdf_salt) {
+        res.status(400).json({ error: 'Bad request' });
+        return;
+    }
+    // Update the latest blob for this user if it has no kdf_salt
+    const result = await VaultBlob.findOneAndUpdate(
+        { user_id, $or: [{ kdf_salt: '' }, { kdf_salt: { $exists: false } }] },
+        { $set: { kdf_salt } },
+        { sort: { version: -1 }, new: true }
+    );
+    if (!result) {
+        res.json({ status: 'already_set' });
+    } else {
+        res.json({ status: 'updated', version: result.version });
+    }
+});
+
 
 // ── Pull (download) encrypted vault ──────────────────────────────────────────
 vaultRouter.get('/pull/:user_id', requireAuth, async (req: Request, res: Response): Promise<void> => {
