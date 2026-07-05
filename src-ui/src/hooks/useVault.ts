@@ -148,6 +148,11 @@ export const syncPush = (): Promise<void> =>
         ? tauriInvoke('sync_push')
         : Promise.resolve();
 
+export const syncForcePush = (): Promise<void> =>
+    isTauri()
+        ? tauriInvoke('sync_force_push')
+        : Promise.resolve();
+
 export const syncPull = (): Promise<void> =>
     isTauri()
         ? tauriInvoke('sync_pull')

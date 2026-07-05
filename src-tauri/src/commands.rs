@@ -242,7 +242,7 @@ pub async fn sync_push(
 
     let push_fut = {
         let engine = state.sync_engine.lock().map_err(map_err)?;
-        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt.clone())
+        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt.clone(), false)
     };
 
     match push_fut.await {
@@ -284,6 +284,42 @@ pub async fn sync_patch_salt(state: State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+/// Force-push: overrides server version conflict. Use when local vault should be master.
+#[tauri::command]
+pub async fn sync_force_push(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> CmdResult<()> {
+    eprintln!("[SYNC] sync_force_push called");
+    let (sync_key, hmac_key, vault_json, local_version, kdf_salt) = {
+        let vault = state.vault.lock().map_err(map_err)?;
+        let (sk, hk) = vault.get_sync_keys().map_err(map_err)?;
+        let vj = vault.export_json().map_err(map_err)?;
+        let lv = vault.version();
+        let salt = vault.get_kdf_salt().unwrap_or_default();
+        (sk, hk, vj, lv, salt)
+    };
+    let push_fut = {
+        let engine = state.sync_engine.lock().map_err(map_err)?;
+        engine.push_owned(vault_json, local_version, sync_key, hmac_key, kdf_salt.clone(), true)
+    };
+    match push_fut.await {
+        Ok(s) => {
+            eprintln!("[SYNC] force push ok: {:?}", s);
+            // Also patch kdf_salt on old blob (non-fatal)
+            if !kdf_salt.is_empty() {
+                let pf = {
+                    let engine = state.sync_engine.lock().map_err(map_err)?;
+                    engine.patch_kdf_salt_owned(kdf_salt)
+                };
+                let _ = pf.await;
+            }
+            let _ = app.emit("vault://changed", ());
+            Ok(())
+        }
+        Err(e) => { eprintln!("[SYNC] force push FAILED: {}", e); Err(map_err(e)) }
+    }
+}
 
 #[tauri::command]
 pub async fn sync_pull(

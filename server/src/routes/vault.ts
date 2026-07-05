@@ -24,7 +24,8 @@ const PushSchema = z.object({
     encrypted_vault: EncryptedDataSchema,
     hmac: z.string().min(1),
     sequence: z.number().int().nonnegative(),
-    kdf_salt: z.string().default(''),  // hex-encoded Argon2 salt — required for cross-device restore
+    kdf_salt: z.string().default(''),
+    force: z.boolean().optional().default(false), // bypass version conflict
 });
 
 // ── Push (upload) encrypted vault ────────────────────────────────────────────
@@ -35,7 +36,7 @@ vaultRouter.post('/push', requireAuth, async (req: Request, res: Response): Prom
         return;
     }
 
-    const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence, kdf_salt } = parsed.data;
+    const { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence, kdf_salt, force } = parsed.data;
     const authedUser = (req as any).user as { userId: string };
 
     if (authedUser.userId !== user_id) {
@@ -49,27 +50,31 @@ vaultRouter.post('/push', requireAuth, async (req: Request, res: Response): Prom
         return;
     }
 
-    // Conflict: server has a STRICTLY NEWER version (not equal — equal allowed for kdf_salt update)
     const existing = await VaultBlob.findOne({ user_id }).sort({ version: -1 });
-    if (existing && existing.version > version) {
+
+    // Conflict check: skip entirely when force=true
+    if (!force && existing && existing.version > version) {
         res.status(200).json({
             status: 'conflict',
             server_version: existing.version,
-            message: 'Server has a newer version. Pull first, then push.',
+            message: 'Server has a newer version. Use force push or pull first.',
         });
         return;
     }
 
-    // Upsert: update existing blob for this version, or create new one.
-    // This allows re-push of the same version to update kdf_salt on old blobs.
+    // Force push: use serverVersion + 1 so it's always the latest
+    const effectiveVersion = force && existing
+        ? existing.version + 1
+        : version;
+
     await VaultBlob.findOneAndUpdate(
-        { user_id, version },
-        { user_id, device_id, version, timestamp, encrypted_vault, hmac, sequence,
+        { user_id, version: effectiveVersion },
+        { user_id, device_id, version: effectiveVersion, timestamp, encrypted_vault, hmac, sequence,
           kdf_salt: kdf_salt ?? '', size_bytes: sizeBytes },
         { upsert: true, new: true }
     );
 
-    res.status(200).json({ status: 'synced', server_version: version });
+    res.status(200).json({ status: 'synced', server_version: effectiveVersion });
 });
 
 // ── Patch kdf_salt on existing blob (called automatically by client after server upgrade) ──

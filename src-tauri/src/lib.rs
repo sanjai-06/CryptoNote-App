@@ -198,6 +198,7 @@ pub fn run() {
             sync_ping,
             sync_register,
             sync_push,
+            sync_force_push,
             sync_pull,
             sync_patch_salt,
             vault_restore_from_sync,

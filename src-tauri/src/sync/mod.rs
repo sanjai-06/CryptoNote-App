@@ -58,16 +58,14 @@ pub struct SyncPayload {
     pub device_id: String,
     pub version: i64,
     pub timestamp: i64,
-    /// Entire vault serialized and encrypted with the sync_key
     pub encrypted_vault: EncryptedData,
-    /// HMAC over (user_id || device_id || version || timestamp || kdf_salt || encrypted_vault)
     pub hmac: String,
-    /// Monotonic counter for replay attack protection
     pub sequence: u64,
-    /// Plaintext KDF salt (base64) — allows new devices to derive sync keys
-    /// The salt is not secret; it's standard practice to include it in plaintext.
     #[serde(default)]
     pub kdf_salt: String,
+    /// When true, server bypasses version conflict check
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
 }
 
 // ─── Server response ─────────────────────────────────────────────────────────
@@ -208,6 +206,7 @@ impl SyncEngine {
             hmac,
             sequence,
             kdf_salt: kdf_salt_b64.to_string(),
+            force: false,
         })
     }
 
@@ -359,8 +358,11 @@ impl SyncEngine {
         sync_key: SecureKey,
         hmac_key: SecureKey,
         kdf_salt_b64: String,
+        force: bool,
     ) -> impl std::future::Future<Output = Result<SyncStatus>> + Send + 'static {
-        let payload = self.build_payload(&vault_json, local_version, &sync_key, &hmac_key, &kdf_salt_b64);
+        let mut payload = self.build_payload(&vault_json, local_version, &sync_key, &hmac_key, &kdf_salt_b64);
+        // Mark force push so server bypasses version conflict
+        if let Ok(ref mut p) = payload { p.force = force; }
         let (server_url, auth_token, tls_cert) = {
             let cfg = self.config.lock().unwrap();
             (cfg.server_url.clone(), cfg.auth_token.clone(), cfg.tls_cert_pem.clone())

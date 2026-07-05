@@ -13,7 +13,7 @@ import { SyncStatus } from '../components/SyncStatus';
 import { PasswordGenerator } from '../components/PasswordGenerator';
 import {
     vaultLock, syncConfigure, securityCheckDevice,
-    setAutoLockTimeout, syncPull, syncPush, syncPatchSalt, vaultRestoreFromSync,
+    setAutoLockTimeout, syncPull, syncPush, syncForcePush, syncPatchSalt, vaultRestoreFromSync,
 } from '../hooks/useVault';
 import { isTauri } from '@tauri-apps/api/core';
 import { useVaultStore } from '../store/vaultStore';
@@ -48,6 +48,7 @@ export function SettingsPage() {
     const [syncStatus, setSyncStatus] = useState<'idle'|'syncing'|'synced'|'error'>('idle');
     const [syncMsg, setSyncMsg] = useState('');
     const [needsRestore, setNeedsRestore] = useState(false);
+    const [hasLocalVault, setHasLocalVault] = useState(false);
     const [securityStatus, setSecurityStatus] = useState<{ is_compromised: boolean; findings: string[] } | null>(null);
     const [checkingDevice, setCheckingDevice] = useState(false);
     const [showPwGen, setShowPwGen] = useState(false);
@@ -74,6 +75,10 @@ export function SettingsPage() {
     useEffect(() => {
         runDeviceCheck();
         checkBioSensor();
+        // Check if this device already has a local vault
+        import('../hooks/useVault').then(({ vaultIsInitialized }) => {
+            vaultIsInitialized().then(ok => setHasLocalVault(ok)).catch(() => {});
+        });
         if (syncEmail && syncServerUrl) {
             syncConfigure({
                 server_url: syncServerUrl,
@@ -634,16 +639,45 @@ export function SettingsPage() {
                             </div>
                         )}
 
-                        {/* Restore form — shown only when pull fails on a new device */}
+                        {/* Restore/ForcePush panel — shown when pull fails */}
                         {needsRestore && syncEnabled && (
                             <div style={{ margin: '0 20px 16px', padding: '12px 14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+
+                                {/* If device has local vault → offer force push first */}
+                                {hasLocalVault && (
+                                    <div style={{ marginBottom: 10 }}>
+                                        <div style={{ fontSize: '0.8rem', color: '#86efac', marginBottom: 8 }}>
+                                            💾 This device has a local vault. Push it to the server to fix the conflict.
+                                        </div>
+                                        <button className='btn btn-primary' style={{ width: '100%' }}
+                                            disabled={syncStatus === 'syncing'}
+                                            onClick={async () => {
+                                                setSyncStatus('syncing');
+                                                setSyncMsg('');
+                                                try {
+                                                    await syncForcePush();
+                                                    setNeedsRestore(false);
+                                                    setSyncStatus('synced');
+                                                    setSyncMsg('Vault pushed to server ✓');
+                                                } catch (e: any) {
+                                                    setSyncStatus('error');
+                                                    setSyncMsg(e?.message ?? 'Push failed');
+                                                }
+                                            }}>
+                                            {syncStatus === 'syncing' ? 'Pushing…' : '⬆ Use My Vault (Push to Server)'}
+                                        </button>
+                                        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', margin: '8px 0 4px' }}>— or restore from server instead —</div>
+                                    </div>
+                                )}
+
+                                {/* Restore from cloud form */}
                                 <div style={{ fontSize: '0.8rem', color: '#a5b4fc', marginBottom: 8 }}>
                                     🔑 Enter your master password to restore from cloud
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
                                         <input
-                                            autoFocus
+                                            autoFocus={!hasLocalVault}
                                             type={showRestorePw ? 'text' : 'password'}
                                             className='form-input font-mono'
                                             placeholder='Master password…'
