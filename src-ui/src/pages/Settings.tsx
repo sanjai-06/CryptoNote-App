@@ -639,45 +639,19 @@ export function SettingsPage() {
                             </div>
                         )}
 
-                        {/* Restore/ForcePush panel — shown when pull fails */}
+                        {/* Restore panel — shown when pull HMAC fails (new device setup) */}
                         {needsRestore && syncEnabled && (
-                            <div style={{ margin: '0 20px 16px', padding: '12px 14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
-
-                                {/* If device has local vault → offer force push first */}
-                                {hasLocalVault && (
-                                    <div style={{ marginBottom: 10 }}>
-                                        <div style={{ fontSize: '0.8rem', color: '#86efac', marginBottom: 8 }}>
-                                            💾 This device has a local vault. Push it to the server to fix the conflict.
-                                        </div>
-                                        <button className='btn btn-primary' style={{ width: '100%' }}
-                                            disabled={syncStatus === 'syncing'}
-                                            onClick={async () => {
-                                                setSyncStatus('syncing');
-                                                setSyncMsg('');
-                                                try {
-                                                    await syncForcePush();
-                                                    setNeedsRestore(false);
-                                                    setSyncStatus('synced');
-                                                    setSyncMsg('Vault pushed to server ✓');
-                                                } catch (e: any) {
-                                                    setSyncStatus('error');
-                                                    setSyncMsg(e?.message ?? 'Push failed');
-                                                }
-                                            }}>
-                                            {syncStatus === 'syncing' ? 'Pushing…' : '⬆ Use My Vault (Push to Server)'}
-                                        </button>
-                                        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', margin: '8px 0 4px' }}>— or restore from server instead —</div>
-                                    </div>
-                                )}
-
-                                {/* Restore from cloud form */}
-                                <div style={{ fontSize: '0.8rem', color: '#a5b4fc', marginBottom: 8 }}>
-                                    🔑 Enter your master password to restore from cloud
+                            <div style={{ margin: '0 20px 16px', padding: '14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#a5b4fc', marginBottom: 4 }}>
+                                    🔑 Restore vault from cloud
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                                    Enter the <strong style={{ color: 'var(--text-secondary)' }}>master password you set up on your primary device</strong> (e.g. the password you use on your Linux/desktop app). This will download and decrypt your vault from the server.
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
                                         <input
-                                            autoFocus={!hasLocalVault}
+                                            autoFocus
                                             type={showRestorePw ? 'text' : 'password'}
                                             className='form-input font-mono'
                                             placeholder='Master password…'
