@@ -55,7 +55,32 @@ export function UnlockPage() {
         }).catch(() => {});
     }, []);
 
+    const [bioReady, setBioReady] = useState(false); // true once we've loaded from Tauri
+
     useEffect(() => () => { if (bioTimerRef.current) clearTimeout(bioTimerRef.current); }, []);
+
+    // On Android, localStorage is wiped on restart — load credential from Tauri file first
+    useEffect(() => {
+        async function loadCredentialFromTauri() {
+            try {
+                if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    const encoded = await invoke<string>('biometric_load_credential');
+                    if (encoded && encoded.length > 0) {
+                        // Populate localStorage so getBiometricPassword() works synchronously
+                        localStorage.setItem('cryptonote_bio_pw', encoded);
+                        console.log('[BIO] credential restored from Tauri file into localStorage');
+                    }
+                }
+            } catch (e) {
+                console.warn('[BIO] load_credential failed:', e);
+            } finally {
+                setBioReady(true);
+            }
+        }
+        loadCredentialFromTauri();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ── Core unlock ───────────────────────────────────────────────────────────
     const doUnlock = useCallback(async (pw: string) => {
@@ -121,17 +146,20 @@ export function UnlockPage() {
         }
     }, [bioState, doUnlock, getBiometricPassword]);
 
-    // Auto-trigger biometric on mount
+    // Auto-trigger biometric on mount — but only after credential loaded from Tauri
     useEffect(() => {
-        if (hasBiometric && !noVault) {
-            const t = setTimeout(() => handleBiometricUnlock(), 500);
+        if (!bioReady) return; // Wait for Tauri credential load
+        const storedPwNow = getBiometricPassword();
+        const hasBio = biometricEnabled && storedPwNow !== null;
+        if (hasBio && !noVault) {
+            const t = setTimeout(() => handleBiometricUnlock(), 400);
             return () => clearTimeout(t);
-        } else if (!hasBiometric && !noVault) {
+        } else if (!hasBio && !noVault) {
             const t = setTimeout(() => inputRef.current?.focus(), 300);
             return () => clearTimeout(t);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [noVault]);
+    }, [bioReady, noVault]);
 
     async function handleUnlock(e: React.FormEvent) {
         e.preventDefault();
@@ -182,7 +210,9 @@ export function UnlockPage() {
     }
 
     // ── Biometric-first screen ────────────────────────────────────────────────
-    if (hasBiometric && !showPwScreen && !noVault) {
+    // Re-evaluate hasBiometric AFTER credential load from Tauri
+    const hasBioNow = biometricEnabled && getBiometricPassword() !== null;
+    if (hasBioNow && !showPwScreen && !noVault) {
         return (
             <div className='auth-layout'>
                 <div className='auth-card bio-card' style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 52, paddingBottom: 48 }}>

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STD, Engine as _};
-use tauri::{State, Emitter};
+use tauri::{State, Emitter, Manager};
 use crate::{AppState, CmdResult, map_err};
 use crate::ai::{AnomalyResult, PhishingResult};
 use crate::sync::{SyncConfig, SyncStatus};
@@ -457,6 +457,43 @@ pub fn security_check_device() -> CmdResult<crate::os_security::SecurityPostureR
 #[tauri::command]
 pub fn security_biometric_info() -> CmdResult<serde_json::Value> {
     Ok(crate::os_security::get_biometric_info())
+}
+
+/// Store the biometric credential (base64-encoded password) to a persistent file.
+/// localStorage is cleared on Android app restarts — use this instead.
+#[tauri::command]
+pub fn biometric_store_credential(app: tauri::AppHandle, credential: String) -> CmdResult<()> {
+    let path = app.path().app_data_dir()
+        .map_err(|e| map_err(anyhow!("app_data_dir: {e}")))?
+        .join(".bio_cred");
+    std::fs::create_dir_all(path.parent().unwrap_or(&path)).ok();
+    std::fs::write(&path, credential.as_bytes())
+        .map_err(|e| map_err(anyhow!("write bio cred: {e}")))?;
+    eprintln!("[BIO] credential stored at {:?}", path);
+    Ok(())
+}
+
+/// Load the biometric credential from persistent storage. Returns empty string if not set.
+#[tauri::command]
+pub fn biometric_load_credential(app: tauri::AppHandle) -> CmdResult<String> {
+    let path = app.path().app_data_dir()
+        .map_err(|e| map_err(anyhow!("app_data_dir: {e}")))?
+        .join(".bio_cred");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => { eprintln!("[BIO] credential loaded"); Ok(s.trim().to_string()) }
+        Err(_) => { eprintln!("[BIO] no credential found"); Ok(String::new()) }
+    }
+}
+
+/// Clear biometric credential from persistent storage.
+#[tauri::command]
+pub fn biometric_clear_credential(app: tauri::AppHandle) -> CmdResult<()> {
+    let path = app.path().app_data_dir()
+        .map_err(|e| map_err(anyhow!("app_data_dir: {e}")))?
+        .join(".bio_cred");
+    std::fs::remove_file(&path).ok();
+    eprintln!("[BIO] credential cleared");
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

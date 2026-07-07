@@ -156,14 +156,28 @@ export const useVaultStore = create<VaultStore>((set) => ({
     setBiometricEnabled: (biometricEnabled) => {
         try { localStorage.setItem(LS_BIOMETRIC_KEY, String(biometricEnabled)); } catch {}
         if (!biometricEnabled) {
+            // Clear from both localStorage (desktop fallback) and Tauri file (mobile)
             try { localStorage.removeItem(LS_BIO_PW_KEY); } catch {}
+            // Clear from Tauri persistent storage (mobile — fire and forget)
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+                invoke('biometric_clear_credential').catch(() => {});
+            }).catch(() => {});
         }
         set({ biometricEnabled });
     },
     storeBiometricPassword: (pw) => {
-        try { localStorage.setItem(LS_BIO_PW_KEY, btoa(pw)); } catch {}
+        const encoded = btoa(pw);
+        // Always write to localStorage (desktop fallback)
+        try { localStorage.setItem(LS_BIO_PW_KEY, encoded); } catch {}
+        // Also write to Tauri file-backed storage (survives Android app restarts)
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+            invoke('biometric_store_credential', { credential: encoded }).catch((e: any) => {
+                console.warn('[BIO] store_credential failed:', e);
+            });
+        }).catch(() => {});
     },
     getBiometricPassword: () => {
+        // Synchronous: read from localStorage (populated by loadBiometricCredential on startup)
         try {
             const v = localStorage.getItem(LS_BIO_PW_KEY);
             return v ? atob(v) : null;
@@ -171,6 +185,9 @@ export const useVaultStore = create<VaultStore>((set) => ({
     },
     clearBiometricPassword: () => {
         try { localStorage.removeItem(LS_BIO_PW_KEY); } catch {}
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+            invoke('biometric_clear_credential').catch(() => {});
+        }).catch(() => {});
     },
 
     reset: () => set(initialState),

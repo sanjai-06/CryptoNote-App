@@ -205,6 +205,9 @@ pub fn run() {
             // OS security
             security_check_device,
             security_biometric_info,
+            biometric_store_credential,
+            biometric_load_credential,
+            biometric_clear_credential,
             // Auto-lock
             set_auto_lock_timeout,
             check_auto_lock,
