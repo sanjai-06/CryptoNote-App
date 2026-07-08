@@ -162,11 +162,13 @@ export function SettingsPage() {
             const msg = typeof err === 'string' ? err : (err?.message ?? err?.toString() ?? 'unknown');
             console.error('[restore] failed:', msg);
             if (msg.includes('No vault data') || msg.includes('not_found')) {
-                setRestoreError('No vault on server for this email. Push from your other device first.');
-            } else if (msg.includes('HMAC') || msg.includes('tamper') || msg.includes('Wrong master')) {
-                setRestoreError('Wrong master password — use the exact same password as your other device.');
-            } else if (msg.includes('decrypt') || msg.includes('Decryption')) {
-                setRestoreError('Decryption failed — wrong master password?');
+                setRestoreError('No vault found on server. Enable sync on your primary device (Linux) first.');
+            } else if (msg.includes('Wrong master password') || msg.includes('HMAC') || msg.includes('tamper') || msg.includes('decrypt') || msg.includes('Decryption')) {
+                setRestoreError(
+                    '❌ Decryption failed. Two possible causes:\n' +
+                    '1. Wrong password — make sure you enter the EXACT password from your Linux app.\n' +
+                    '2. Missing server metadata — toggle sync OFF then ON on your Linux device, then try again here.'
+                );
             } else {
                 setRestoreError(msg || 'Restore failed.');
             }
@@ -596,21 +598,25 @@ export function SettingsPage() {
                                             return;
                                         }
 
-                                        // Pull first — get data from server (never overwrite server data blindly)
+                                        // Pull first to get server data
                                         let pullOk = await syncPull().then(() => true).catch(async (pullErr: any) => {
                                             const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
-                                            // If server has no vault yet → we are the source device, push our vault
+                                            // Server has no vault yet → we are the source device
                                             if (msg.toLowerCase().includes('no vault') || msg.toLowerCase().includes('not_found') || msg.toLowerCase().includes('no vault data')) {
-                                                try { await syncPush(); } catch { /* push failed silently */ }
+                                                try { await syncForcePush(); } catch { /* non-fatal */ }
                                                 return true;
                                             }
-                                            // HMAC / key mismatch → new device that needs full restore
+                                            // HMAC / key mismatch → new device that needs restore
                                             setSyncStatus('error');
                                             setSyncMsg(msg || 'Could not verify server vault — enter your master password to restore.');
                                             setNeedsRestore(true);
                                             return false;
                                         });
                                         if (pullOk) {
+                                            // Always push after pull so server blob has current kdf_salt.
+                                            // This is safe — we just pulled so we're not overwriting newer data.
+                                            // Mobile restore depends on kdf_salt being present on the server.
+                                            syncForcePush().catch(() => {});
                                             setSyncStatus('synced');
                                             setSyncMsg('');
                                         }
