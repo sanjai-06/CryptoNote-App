@@ -601,21 +601,44 @@ export function SettingsPage() {
                                         // Pull first to get server data
                                         let pullOk = await syncPull().then(() => true).catch(async (pullErr: any) => {
                                             const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
-                                            // Server has no vault yet → we are the source device
+
+                                            // Server has no vault yet → push ours
                                             if (msg.toLowerCase().includes('no vault') || msg.toLowerCase().includes('not_found') || msg.toLowerCase().includes('no vault data')) {
+                                                setSyncStatus('syncing');
+                                                setSyncMsg('Uploading vault to server…');
                                                 try { await syncForcePush(); } catch { /* non-fatal */ }
                                                 return true;
                                             }
-                                            // HMAC / key mismatch → new device that needs restore
+
+                                            // HMAC / key mismatch — server has a DIFFERENT device's vault
+                                            // If THIS device already has a local vault → it is the master,
+                                            // force-push to overwrite the foreign blob on the server.
+                                            const localVaultExists = await import('../hooks/useVault')
+                                                .then(({ vaultIsInitialized }) => vaultIsInitialized())
+                                                .catch(() => false);
+
+                                            if (localVaultExists) {
+                                                // Device has local data → push it to server (safe: we are primary)
+                                                setSyncStatus('syncing');
+                                                setSyncMsg('Updating server with local vault…');
+                                                try {
+                                                    await syncForcePush();
+                                                    return true;
+                                                } catch (pushErr: any) {
+                                                    setSyncStatus('error');
+                                                    setSyncMsg('Push failed: ' + (pushErr?.message ?? 'unknown'));
+                                                    return false;
+                                                }
+                                            }
+
+                                            // No local vault → this is a new device, needs cloud restore
                                             setSyncStatus('error');
-                                            setSyncMsg(msg || 'Could not verify server vault — enter your master password to restore.');
+                                            setSyncMsg('Enter your master password to restore your vault from the cloud.');
                                             setNeedsRestore(true);
                                             return false;
                                         });
                                         if (pullOk) {
-                                            // Always push after pull so server blob has current kdf_salt.
-                                            // This is safe — we just pulled so we're not overwriting newer data.
-                                            // Mobile restore depends on kdf_salt being present on the server.
+                                            // Push after successful pull so server always has current kdf_salt
                                             syncForcePush().catch(() => {});
                                             setSyncStatus('synced');
                                             setSyncMsg('');
