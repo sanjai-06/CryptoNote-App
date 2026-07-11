@@ -602,7 +602,7 @@ export function SettingsPage() {
                                         let pullOk = await syncPull().then(() => true).catch(async (pullErr: any) => {
                                             const msg = typeof pullErr === 'string' ? pullErr : (pullErr?.message ?? '');
 
-                                            // Server has no vault yet → push ours
+                                            // Server has no vault yet → this is the first device, push ours
                                             if (msg.toLowerCase().includes('no vault') || msg.toLowerCase().includes('not_found') || msg.toLowerCase().includes('no vault data')) {
                                                 setSyncStatus('syncing');
                                                 setSyncMsg('Uploading vault to server…');
@@ -610,35 +610,16 @@ export function SettingsPage() {
                                                 return true;
                                             }
 
-                                            // HMAC / key mismatch — server has a DIFFERENT device's vault
-                                            // If THIS device already has a local vault → it is the master,
-                                            // force-push to overwrite the foreign blob on the server.
-                                            const localVaultExists = await import('../hooks/useVault')
-                                                .then(({ vaultIsInitialized }) => vaultIsInitialized())
-                                                .catch(() => false);
-
-                                            if (localVaultExists) {
-                                                // Device has local data → push it to server (safe: we are primary)
-                                                setSyncStatus('syncing');
-                                                setSyncMsg('Updating server with local vault…');
-                                                try {
-                                                    await syncForcePush();
-                                                    return true;
-                                                } catch (pushErr: any) {
-                                                    setSyncStatus('error');
-                                                    setSyncMsg('Push failed: ' + (pushErr?.message ?? 'unknown'));
-                                                    return false;
-                                                }
-                                            }
-
-                                            // No local vault → this is a new device, needs cloud restore
+                                            // HMAC / key mismatch — server has a different device's vault.
+                                            // Always show restore form. User can also choose to override
+                                            // with their local vault using the 'Use This Device' button.
                                             setSyncStatus('error');
-                                            setSyncMsg('Enter your master password to restore your vault from the cloud.');
+                                            setSyncMsg('Vault on server belongs to a different device.');
                                             setNeedsRestore(true);
                                             return false;
                                         });
                                         if (pullOk) {
-                                            // Push after successful pull so server always has current kdf_salt
+                                            // Push after successful pull to refresh kdf_salt on server
                                             syncForcePush().catch(() => {});
                                             setSyncStatus('synced');
                                             setSyncMsg('');
@@ -668,14 +649,15 @@ export function SettingsPage() {
                             </div>
                         )}
 
-                        {/* Restore panel — shown when pull HMAC fails (new device setup) */}
+                        {/* Restore panel — shown when HMAC/key mismatch on pull */}
                         {needsRestore && syncEnabled && (
                             <div style={{ margin: '0 20px 16px', padding: '14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+                                {/* Primary action: restore from cloud */}
                                 <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#a5b4fc', marginBottom: 4 }}>
                                     🔑 Restore vault from cloud
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-                                    Enter the <strong style={{ color: 'var(--text-secondary)' }}>master password you set up on your primary device</strong> (e.g. the password you use on your Linux/desktop app). This will download and decrypt your vault from the server.
+                                    Enter the <strong style={{ color: 'var(--text-secondary)' }}>master password from your primary device</strong> (e.g. Linux). This downloads and decrypts the vault from the server.
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
@@ -706,6 +688,32 @@ export function SettingsPage() {
                                         <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{restoreError}
                                     </div>
                                 )}
+
+                                {/* Secondary action: override server with local vault */}
+                                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(99,102,241,0.2)' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6 }}>
+                                        Or if <strong style={{ color: 'var(--text-secondary)' }}>this device</strong> is your primary device:
+                                    </div>
+                                    <button className='btn'
+                                        disabled={syncStatus === 'syncing'}
+                                        style={{ width: '100%', fontSize: '0.78rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
+                                        onClick={async () => {
+                                            if (!window.confirm('This will OVERWRITE the vault on the server with this device\'s vault. Your other device will need to restore from cloud afterwards. Continue?')) return;
+                                            setSyncStatus('syncing');
+                                            setSyncMsg('Pushing local vault to server…');
+                                            try {
+                                                await syncForcePush();
+                                                setNeedsRestore(false);
+                                                setSyncStatus('synced');
+                                                setSyncMsg('Vault pushed to server ✓');
+                                            } catch (e: any) {
+                                                setSyncStatus('error');
+                                                setSyncMsg(e?.message ?? 'Push failed');
+                                            }
+                                        }}>
+                                        {syncStatus === 'syncing' ? 'Pushing…' : '⬆ Use This Device\'s Vault (Override Server)'}
+                                    </button>
+                                </div>
                             </div>
                         )}
 
