@@ -64,7 +64,8 @@ export function SettingsPage() {
     const [bioEnrollError, setBioEnrollError] = useState('');
     const [bioEnrolling, setBioEnrolling]     = useState(false);
     const bioEnrollRef = useRef<HTMLInputElement>(null);
-    const isEnrolled = getBiometricPassword() !== null;
+    // isEnrolled is async — loaded from Tauri file on mount (localStorage is wiped on Android restart)
+    const [isEnrolled, setIsEnrolled] = useState(() => getBiometricPassword() !== null);
     const enrolledAt = (() => { try { return localStorage.getItem('cryptonote_bio_enrolled_at'); } catch { return null; } })();
 
     // Biometric sensor status
@@ -73,9 +74,23 @@ export function SettingsPage() {
 
     // Re-apply saved sync config to Tauri engine on mount
     useEffect(() => {
+        // Load biometric credential from Tauri file into localStorage
+        // so isEnrolled is correct immediately on Android (localStorage wiped on restart)
+        (async () => {
+            try {
+                if ((window as any).__TAURI_INTERNALS__) {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    const encoded = await invoke<string>('biometric_load_credential');
+                    if (encoded && encoded.length > 0) {
+                        localStorage.setItem('cryptonote_bio_pw', encoded);
+                        setIsEnrolled(true);
+                    }
+                }
+            } catch {}
+        })();
+
         runDeviceCheck();
         checkBioSensor();
-        // Check if this device already has a local vault
         import('../hooks/useVault').then(({ vaultIsInitialized }) => {
             vaultIsInitialized().then(ok => setHasLocalVault(ok)).catch(() => {});
         });
@@ -180,22 +195,59 @@ export function SettingsPage() {
         navigate('/unlock');
     }
 
-    // Verify password against vault, then store it for biometric unlock
+    // Enroll biometric: verify password → trigger biometric hardware → store credential
     async function doEnroll() {
         if (!bioEnrollPw) return;
         setBioEnrolling(true);
         setBioEnrollError('');
         try {
-            // Import vaultUnlock inline to verify password (vault is already unlocked,
-            // but we call it to confirm the password is correct before trusting it)
+            // Step 1: verify the master password is correct
             const { vaultUnlock: verify } = await import('../hooks/useVault');
             await verify(bioEnrollPw);
+
+            // Step 2: trigger the actual biometric hardware prompt
+            // This confirms the user's fingerprint/face is enrolled in the OS
+            if ((window as any).__TAURI_INTERNALS__) {
+                try {
+                    const { authenticate } = await import('@tauri-apps/plugin-biometric');
+                    await authenticate('Enroll biometric for CryptoNote', {
+                        title: 'Confirm Fingerprint',
+                        subtitle: 'Touch the sensor to enable biometric unlock',
+                        cancelTitle: 'Cancel',
+                        allowDeviceCredential: false,
+                    });
+                } catch (bioErr: any) {
+                    const code = bioErr?.errorCode ?? '';
+                    const msg  = typeof bioErr === 'string' ? bioErr : (bioErr?.message ?? '');
+                    const cancelled = ['userCancel', 'appCancel', 'systemCancel'].includes(code)
+                        || msg.toLowerCase().includes('cancel');
+                    if (cancelled) {
+                        setBioEnrollError('Biometric prompt cancelled. Try again.');
+                        return;
+                    }
+                    if (code === 'biometryNotEnrolled' || msg.toLowerCase().includes('not enrolled')) {
+                        setBioEnrollError('No fingerprint registered on this device. Go to Phone Settings → Security → Fingerprint first.');
+                        return;
+                    }
+                    // Other sensor error — proceed anyway (some emulators/devices report errors)
+                    console.warn('[biometric] enroll prompt error (non-fatal):', msg);
+                }
+            }
+
+            // Step 3: store credential and enable biometric
+            setBiometricEnabled(true);
             storeBiometricPassword(bioEnrollPw);
             try { localStorage.setItem('cryptonote_bio_enrolled_at', String(Date.now())); } catch {}
+            setIsEnrolled(true);
             setShowBioEnroll(false);
             flash('Biometric unlock enrolled ✓');
-        } catch {
-            setBioEnrollError('Password is incorrect. Please try again.');
+        } catch (err: any) {
+            const msg = typeof err === 'string' ? err : (err?.message ?? '');
+            if (msg.includes('Wrong') || msg.includes('Invalid') || msg.includes('incorrect')) {
+                setBioEnrollError('Incorrect master password. Please try again.');
+            } else {
+                setBioEnrollError(msg || 'Enrollment failed.');
+            }
         } finally {
             setBioEnrolling(false);
         }
@@ -423,13 +475,14 @@ export function SettingsPage() {
                             <label className='toggle'>
                                 <input type='checkbox' checked={biometricEnabled} onChange={(e) => {
                                     if (e.target.checked) {
-                                        setBiometricEnabled(true);
+                                        // Don't enable yet — only enable after successful enrollment in doEnroll()
                                         setShowBioEnroll(true);
                                         setBioEnrollPw('');
                                         setBioEnrollError('');
                                         setTimeout(() => bioEnrollRef.current?.focus(), 120);
                                     } else {
                                         setBiometricEnabled(false);
+                                        setIsEnrolled(false);
                                         try { localStorage.removeItem('cryptonote_bio_enrolled_at'); } catch {}
                                         flash('Biometric unlock disabled');
                                     }
