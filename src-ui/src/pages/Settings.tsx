@@ -702,23 +702,28 @@ export function SettingsPage() {
                             </div>
                         )}
 
-                        {/* Restore panel — shown when HMAC/key mismatch on pull */}
+                        {/* Restore panel — one-time setup when adding this device to sync */}
                         {needsRestore && syncEnabled && (
                             <div style={{ margin: '0 20px 16px', padding: '14px', background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
-                                {/* Primary action: restore from cloud */}
+
+                                {/* Header */}
                                 <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#a5b4fc', marginBottom: 4 }}>
-                                    🔑 Restore vault from cloud
+                                    🔗 Connect This Device to Sync
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-                                    Enter the <strong style={{ color: 'var(--text-secondary)' }}>master password from your primary device</strong> (e.g. Linux). This downloads and decrypts the vault from the server.
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
+                                    This is a <strong style={{ color: 'var(--text-secondary)' }}>one-time setup</strong> step.
+                                    Enter your <strong style={{ color: 'var(--text-secondary)' }}>master password</strong> to download the shared vault from the cloud.
+                                    After this, all your devices sync automatically as equals — no "primary device" needed.
                                 </div>
+
+                                {/* Password input + Sync button */}
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
                                         <input
                                             autoFocus
                                             type={showRestorePw ? 'text' : 'password'}
                                             className='form-input font-mono'
-                                            placeholder='Master password…'
+                                            placeholder='Your master password…'
                                             value={restorePw}
                                             onChange={(e) => { setRestorePw(e.target.value); setRestoreError(''); }}
                                             style={{ flex: 1, borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', borderRight: 'none' }}
@@ -733,38 +738,38 @@ export function SettingsPage() {
                                         disabled={!restorePw || syncStatus === 'syncing'}
                                         onClick={handleRestoreFromCloud}
                                         style={{ whiteSpace: 'nowrap' }}>
-                                        {syncStatus === 'syncing' ? 'Restoring…' : 'Restore'}
+                                        {syncStatus === 'syncing' ? 'Syncing…' : '🔗 Sync Now'}
                                     </button>
                                 </div>
                                 {restoreError && (
-                                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--color-danger)', display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+                                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--color-danger)', display: 'flex', alignItems: 'flex-start', gap: 5, whiteSpace: 'pre-line' }}>
                                         <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{restoreError}
                                     </div>
                                 )}
 
-                                {/* Secondary action: override server with local vault */}
+                                {/* Override option */}
                                 <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(99,102,241,0.2)' }}>
                                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6 }}>
-                                        Or if <strong style={{ color: 'var(--text-secondary)' }}>this device</strong> is your primary device:
+                                        ⚠️ If <strong style={{ color: 'var(--text-secondary)' }}>this device</strong> has the latest vault and you want it to be the cloud copy:
                                     </div>
                                     <button className='btn'
                                         disabled={syncStatus === 'syncing'}
                                         style={{ width: '100%', fontSize: '0.78rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
                                         onClick={async () => {
-                                            if (!window.confirm('This will OVERWRITE the vault on the server with this device\'s vault. Your other device will need to restore from cloud afterwards. Continue?')) return;
+                                            if (!window.confirm('This uploads THIS device\'s vault to the cloud, replacing what\'s there. Your other devices will need to re-sync. Continue?')) return;
                                             setSyncStatus('syncing');
-                                            setSyncMsg('Pushing local vault to server…');
+                                            setSyncMsg('Uploading this device\'s vault…');
                                             try {
                                                 await syncForcePush();
                                                 setNeedsRestore(false);
                                                 setSyncStatus('synced');
-                                                setSyncMsg('Vault pushed to server ✓');
+                                                setSyncMsg('Vault uploaded ✓ — other devices can now sync');
                                             } catch (e: any) {
                                                 setSyncStatus('error');
-                                                setSyncMsg(e?.message ?? 'Push failed');
+                                                setSyncMsg(e?.message ?? 'Upload failed');
                                             }
                                         }}>
-                                        {syncStatus === 'syncing' ? 'Pushing…' : '⬆ Use This Device\'s Vault (Override Server)'}
+                                        {syncStatus === 'syncing' ? 'Uploading…' : '⬆ Upload This Device\'s Vault to Cloud'}
                                     </button>
                                 </div>
                             </div>
