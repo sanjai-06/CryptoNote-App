@@ -369,6 +369,9 @@ pub async fn vault_restore_from_sync(
 ) -> CmdResult<crate::vault::VaultMeta> {
     use crate::crypto::{decode_salt, derive_master_key, derive_subkeys};
 
+    eprintln!("[RESTORE] starting for user_id={}", user_id);
+    eprintln!("[RESTORE] password length={}", master_password.len());
+
     // 1. Fetch raw payload (no local vault needed)
     let fetch_fut = {
         let engine = state.sync_engine.lock().map_err(map_err)?;
@@ -376,41 +379,55 @@ pub async fn vault_restore_from_sync(
     };
     let payload = fetch_fut.await.map_err(|e| map_err(anyhow::anyhow!("Server error: {}", e)))?;
 
+    eprintln!("[RESTORE] payload received: kdf_salt=\"{}\" (len={}), ciphertext_len={}",
+        payload.kdf_salt, payload.kdf_salt.len(),
+        payload.encrypted_vault.ciphertext.len());
+
     // 2. Determine salt candidates to try.
-    //    - Modern payloads: server returns the actual kdf_salt → try it first
-    //    - Legacy payloads (server didn't store kdf_salt): try zero-byte salt as fallback
-    //    We skip HMAC verification entirely — XChaCha20-Poly1305 decryption below
-    //    provides strong authentication (wrong password/salt = MAC verification failure).
     let mut salt_candidates: Vec<[u8; 32]> = Vec::new();
 
     if !payload.kdf_salt.is_empty() {
         match decode_salt(&payload.kdf_salt) {
-            Ok(s) => { salt_candidates.push(s); }
+            Ok(s) => {
+                eprintln!("[RESTORE] decoded server kdf_salt OK (first 4 bytes: {:?})", &s[..4]);
+                salt_candidates.push(s);
+            }
             Err(e) => {
-                eprintln!("[RESTORE] could not decode server kdf_salt: {e}");
+                eprintln!("[RESTORE] ERROR: could not decode server kdf_salt: {e}");
             }
         }
+    } else {
+        eprintln!("[RESTORE] WARNING: server kdf_salt is empty — will try zero salt only");
     }
-    // Always add zero-byte fallback (for legacy blobs / future-proof)
+    // Always add zero-byte fallback (for legacy blobs)
     salt_candidates.push([0u8; 32]);
+
+    eprintln!("[RESTORE] trying {} salt candidate(s)", salt_candidates.len());
 
     // 3. Try each salt — decrypt until one works (AEAD provides authentication)
     let mut vault_json: Option<String> = None;
     let mut used_kdf_salt = String::new();
 
-    for salt_bytes in &salt_candidates {
+    for (i, salt_bytes) in salt_candidates.iter().enumerate() {
+        eprintln!("[RESTORE] trying salt #{} (zero={})", i, salt_bytes == &[0u8; 32]);
         let master_key = match derive_master_key(&master_password, salt_bytes) {
             Ok(k) => k,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("[RESTORE] salt #{}: derive_master_key failed: {}", i, e);
+                continue;
+            }
         };
         let keys = match derive_subkeys(&master_key) {
             Ok(k) => k,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("[RESTORE] salt #{}: derive_subkeys failed: {}", i, e);
+                continue;
+            }
         };
         match crate::crypto::decrypt_string(&keys.sync_key, &payload.encrypted_vault) {
             Ok(json) => {
+                eprintln!("[RESTORE] salt #{}: DECRYPT SUCCESS! vault_json length={}", i, json.len());
                 vault_json = Some(json);
-                // Record which salt worked
                 if salt_bytes == &[0u8; 32] && !payload.kdf_salt.is_empty() {
                     used_kdf_salt = payload.kdf_salt.clone();
                 } else if salt_bytes == &[0u8; 32] {
@@ -420,15 +437,19 @@ pub async fn vault_restore_from_sync(
                 }
                 break;
             }
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("[RESTORE] salt #{}: decrypt FAILED: {}", i, e);
+                continue;
+            }
         }
     }
 
     let vault_json = vault_json.ok_or_else(|| map_err(anyhow::anyhow!(
-        "Wrong master password. Use the EXACT same password you set up on your original device."
+        "Wrong master password. All {} salt candidates failed decryption.", salt_candidates.len()
     )))?;
 
     // 4. Bootstrap local vault
+    eprintln!("[RESTORE] bootstrapping local vault (used_kdf_salt empty={})", used_kdf_salt.is_empty());
     let meta = {
         let vault = state.vault.lock().map_err(map_err)?;
         let mut meta = vault.create(&master_password).map_err(map_err)?;
@@ -441,6 +462,7 @@ pub async fn vault_restore_from_sync(
         meta
     };
 
+    eprintln!("[RESTORE] SUCCESS — vault restored");
     let _ = app.emit("vault://refreshed", ());
     Ok(meta)
 }
