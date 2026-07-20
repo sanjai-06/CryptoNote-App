@@ -722,6 +722,10 @@ export function SettingsPage() {
                                         <input
                                             autoFocus
                                             type={showRestorePw ? 'text' : 'password'}
+                                            autoCapitalize='none'
+                                            autoCorrect='off'
+                                            autoComplete='off'
+                                            spellCheck={false}
                                             className='form-input font-mono'
                                             placeholder='Your master password…'
                                             value={restorePw}
